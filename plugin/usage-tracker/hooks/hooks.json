@@ -1,0 +1,92 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type SessionStart"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type SessionEnd"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type PreToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type PostToolUse"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type PostToolUseFailure"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type SubagentStop"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type Stop"
+          }
+        ]
+      }
+    ]
+  }
+}
