@@ -38,9 +38,13 @@ claude-usage-tracker/
 ├── s3-upload/                # S3アップロードツール
 │   └── setup_and_upload.ps1
 ├── snowflake/                # Snowflake + Streamlit
-│   ├── 01_create_tables.sql
-│   ├── 02_load_data.sql
-│   └── 03_streamlit_app.py
+│   ├── docs/                 # 参考図・設計資料
+│   ├── app/                  # Streamlitアプリのコード
+│   │   └── 03_streamlit_app.py
+│   ├── setup/                # テーブル作成・データロードSQL
+│   │   ├── 01_create_tables.sql
+│   │   └── 02_load_data.sql
+│   └── skills/               # Claude Code スキルファイル
 └── docs/                     # ドキュメント
     └── SETUP_GUIDE_FOR_TEAM.md
 ```
