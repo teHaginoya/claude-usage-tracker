@@ -330,15 +330,11 @@ function Get-UploadUserName {
         return $userId
     }
     # フォールバック: IAMユーザー名
-    try {
-        $arn = aws sts get-caller-identity --query Arn --output text 2>$null
-        if ($arn -match "user/(.+)$") {
-            return $matches[1]
-        }
-        return "unknown"
-    } catch {
-        return "unknown"
+    $arn = (aws sts get-caller-identity --query Arn --output text 2>&1) | Select-Object -First 1
+    if ($arn -match "user/(.+)$") {
+        return $matches[1]
     }
+    return "unknown"
 }
 
 function Upload-ToS3 {
