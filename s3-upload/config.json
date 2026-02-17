@@ -1,0 +1,5 @@
+{
+  "bucket_name": "claude-activity-log-632903090408",
+  "region": "ap-northeast-1",
+  "prefix": "claude-usage-logs"
+}

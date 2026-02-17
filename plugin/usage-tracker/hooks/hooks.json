@@ -66,6 +66,17 @@
         ]
       }
     ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type SubagentStart"
+          }
+        ]
+      }
+    ],
     "SubagentStop": [
       {
         "matcher": "",
@@ -73,6 +84,28 @@
           {
             "type": "command",
             "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type SubagentStop"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type Notification"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type PreCompact"
           }
         ]
       }

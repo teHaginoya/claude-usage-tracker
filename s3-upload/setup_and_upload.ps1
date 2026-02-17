@@ -170,28 +170,58 @@ function Setup-S3Bucket {
 
 function Setup-LocalEnvironment {
     Write-Step "Local Environment Setup"
-    
+
+    # config.json からバケット名を読み込む
+    $configFile = Join-Path $PSScriptRoot "config.json"
+
+    $bucket = $null
+    $configPrefix = "claude-usage-logs"
+    $configRegion = $Region
+
+    if (Test-Path $configFile) {
+        try {
+            $config = Get-Content $configFile -Raw | ConvertFrom-Json
+            $bucket = $config.bucket_name
+            if ($config.prefix) { $configPrefix = $config.prefix }
+            if ($config.region) { $configRegion = $config.region }
+            Write-Info "Loaded config from config.json: bucket = $bucket"
+        } catch {
+            Write-Info "Could not parse config.json"
+        }
+    }
+
+    # すでに環境変数が設定されていて config.json と同じ値なら確認スキップ
     $currentBucket = [System.Environment]::GetEnvironmentVariable("USAGE_TRACKER_S3_BUCKET", "User")
-    
-    if ($currentBucket) {
+
+    if ($currentBucket -and $currentBucket -eq $bucket) {
+        Write-Success "Environment variables already configured: USAGE_TRACKER_S3_BUCKET = $currentBucket"
+        return
+    }
+
+    if ($currentBucket -and $currentBucket -ne $bucket) {
         Write-Info "Current setting: USAGE_TRACKER_S3_BUCKET = $currentBucket"
-        $change = Read-Host "Change? (y/N)"
+        if ($bucket) {
+            Write-Info "config.json setting: $bucket"
+        }
+        $change = Read-Host "Overwrite with config.json value? (y/N)"
         if ($change -ne "y") {
             return
         }
     }
-    
-    $bucket = Read-Host "Enter S3 bucket name"
-    
+
+    if (-not $bucket) {
+        $bucket = Read-Host "Enter S3 bucket name"
+    }
+
     [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_S3_BUCKET", $bucket, "User")
-    [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_S3_PREFIX", "claude-usage-logs", "User")
-    [System.Environment]::SetEnvironmentVariable("AWS_REGION", $Region, "User")
-    
+    [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_S3_PREFIX", $configPrefix, "User")
+    [System.Environment]::SetEnvironmentVariable("AWS_REGION", $configRegion, "User")
+
     $env:USAGE_TRACKER_S3_BUCKET = $bucket
-    $env:USAGE_TRACKER_S3_PREFIX = "claude-usage-logs"
-    $env:AWS_REGION = $Region
-    
-    Write-Success "Environment variables set"
+    $env:USAGE_TRACKER_S3_PREFIX = $configPrefix
+    $env:AWS_REGION = $configRegion
+
+    Write-Success "Environment variables set: USAGE_TRACKER_S3_BUCKET = $bucket"
 }
 
 function Show-LogFiles {
@@ -330,7 +360,7 @@ function Upload-ToS3 {
     Write-Info "IAM User: $iamUser"
     
     Write-Host ""
-    Write-Host "S3 Bucket: s3://$bucket/$prefix/$iamUser/"
+    Write-Host "S3 Bucket: s3://$bucket/$prefix/"
     Write-Host "Files: $($logFiles.Count)"
     Write-Host ""
     
@@ -366,12 +396,13 @@ function Upload-ToS3 {
     foreach ($file in $logFiles) {
         $fileName = $file.Name
         
-        # Extract date from filename: events-2026-02-10.jsonl -> 2026/02/10
-        $datePart = $fileName -replace "events-", "" -replace ".jsonl", ""
-        $datePath = $datePart -replace "-", "/"
-        
-        # S3 key: claude-usage-logs/te.haginoya/2026/02/10/events-2026-02-10.jsonl
-        $s3Key = "$prefix/$iamUser/$datePath/$fileName"
+        # Extract date from filename: events-2026-02-10.jsonl -> 20260210
+        $datePart = $fileName -replace "events-", "" -replace "\.jsonl", ""
+        $dateCompact = $datePart -replace "-", ""
+
+        # S3 key: claude-usage-logs/20260210/{iamUser}-events-20260210.jsonl
+        $s3FileName = "$iamUser-events-$dateCompact.jsonl"
+        $s3Key = "$prefix/$dateCompact/$s3FileName"
         
         if ($uploadedFiles -contains $fileName -and -not $ForceUpload) {
             Write-Host "  [SKIP] $fileName" -ForegroundColor Gray

@@ -5,29 +5,26 @@
 
 ---
 
-## 📋 全体の流れ
+## 全体の流れ
 
-```
-Step 1: 必要なツールのインストール（uv, AWS CLI）
-Step 2: Claude Code プラグインのインストール
-Step 3: S3アップロードツールのセットアップ
+```text
+Step 1: 必要なツールのインストール（Git, uv, AWS CLI）
+Step 2: リポジトリのクローン
+Step 3: Claude Code プラグインのインストール
 Step 4: AWS認証情報の設定
 Step 5: 動作確認
 Step 6: 自動アップロードの設定
 ```
 
-所要時間: 約30分
-
 ---
 
-## 📦 事前に用意するもの
+## 事前に用意するもの
 
-- [ ] Windows PC
-- [ ] Claude Code がインストール済み
-- [ ] 管理者から受け取るもの:
+- Windows PC
+- Claude Code がインストール済み
+- 管理者から受け取るもの:
   - AWS Access Key ID
   - AWS Secret Access Key
-  - S3バケット名
 
 ---
 
@@ -39,7 +36,18 @@ Step 6: 自動アップロードの設定
 2. 「PowerShell」と入力
 3. 「Windows PowerShell」をクリックして開く
 
-### 1-2. uv をインストール
+### 1-2. Git をインストール（未インストールの場合）
+
+インストール済みか確認:
+
+```powershell
+git --version
+```
+
+「git version x.x.x」と表示されれば既にインストール済みです。
+表示されない場合は [https://git-scm.com/download/win](https://git-scm.com/download/win) からインストールしてください。
+
+### 1-3. uv をインストール
 
 以下のコマンドをコピーしてPowerShellに貼り付け、Enterを押します。
 
@@ -49,65 +57,87 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 「everything's installed!」と表示されたら成功です。
 
-### 1-3. PowerShellを再起動
+### 1-4. PowerShellを再起動
 
 1. PowerShellを閉じる（×ボタン）
 2. もう一度PowerShellを開く
 
-### 1-4. uvがインストールされたか確認
+### 1-5. インストール確認
 
 ```powershell
 uv --version
+git --version
 ```
 
-「uv 0.x.x」のようにバージョンが表示されればOKです。
+それぞれバージョンが表示されればOKです。
 
 ---
 
-## Step 2: Claude Code プラグインのインストール
+## Step 2: リポジトリのクローン
 
-### 2-1. プラグインファイルを配置
-
-1. 管理者から受け取った `usage-tracker-plugin.zip` をダウンロード
-2. ZIPファイルを右クリック → 「すべて展開」
-3. 展開先を `C:\Users\あなたのユーザー名\` に設定
-4. 「展開」をクリック
-
-結果: `C:\Users\あなたのユーザー名\usage-tracker-marketplace` フォルダができます
-
-### 2-2. Claude Code を起動
+### 2-1. ホームフォルダに移動
 
 ```powershell
-claude
+cd $env:USERPROFILE
 ```
 
-### 2-3. マーケットプレイスを追加
+### 2-2. リポジトリをクローン
 
-Claude Codeの中で以下を入力:
-
-```
-/plugin marketplace add ./usage-tracker-marketplace
+```powershell
+git clone https://github.com/teHaginoya/claude-usage-tracker.git
 ```
 
-※ 先にホームフォルダに移動してください:
+完了すると `claude-usage-tracker` フォルダが作成されます。
+
+### 2-3. クローンできたか確認
+
+```powershell
+dir $env:USERPROFILE\claude-usage-tracker
+```
+
+`plugin/`, `s3-upload/`, `docs/` などのフォルダが表示されればOKです。
+
+---
+
+## Step 3: Claude Code プラグインのインストール
+
+### 3-1. PowerShell実行ポリシーを変更
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+「実行ポリシーを変更しますか?」と聞かれたら `Y` を入力してEnter。
+
+### 3-2. ホームフォルダでClaude Codeを起動
+
 ```powershell
 cd $env:USERPROFILE
 claude
 ```
 
-### 2-4. プラグインをインストール
+### 3-3. マーケットプレイスを追加
 
+Claude Codeの中で以下を入力:
+
+```text
+/plugin marketplace add ./claude-usage-tracker/plugin
 ```
+
+### 3-4. プラグインをインストール
+
+```text
 /plugin install usage-tracker@usage-tracker-marketplace
 ```
 
 メニューが表示されたら:
+
 - 「Install for you (user scope)」を選択
 - Enterを押す
 
-### 2-5. Claude Codeを再起動
+### 3-5. Claude Codeを再起動
 
-```
+```text
 exit
 ```
 
@@ -117,9 +147,9 @@ exit
 claude
 ```
 
-### 2-6. 動作確認
+### 3-6. 動作確認
 
-```
+```text
 /usage-stats
 ```
 
@@ -127,60 +157,38 @@ claude
 
 ---
 
-## Step 3: S3アップロードツールのセットアップ
-
-### 3-1. アップロードツールを配置
-
-1. 管理者から受け取った `s3-upload-tools.zip` をダウンロード
-2. ZIPファイルを右クリック → 「すべて展開」
-3. 展開先を `C:\Users\あなたのユーザー名\` に設定
-4. 「展開」をクリック
-
-結果: `C:\Users\あなたのユーザー名\s3-upload` フォルダができます
-
-### 3-2. 実行ポリシーを変更
-
-PowerShellで以下を実行:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-「実行ポリシーを変更しますか?」と聞かれたら `Y` を入力してEnter
-
-### 3-3. ファイルのブロックを解除
-
-```powershell
-Unblock-File -Path $env:USERPROFILE\s3-upload\setup_and_upload.ps1
-```
-
----
-
-## Step 4: AWS認証情報の設定
+## Step 4: AWS CLIのインストールと認証情報の設定
 
 ### 4-1. s3-uploadフォルダに移動
 
 ```powershell
-cd $env:USERPROFILE\s3-upload
+cd $env:USERPROFILE\claude-usage-tracker\s3-upload
 ```
 
-### 4-2. セットアップスクリプトを実行
+### 4-2. スクリプトのブロックを解除
+
+```powershell
+Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1
+```
+
+### 4-3. AWS CLIをインストール
+
+```powershell
+.\setup_and_upload.ps1 -Action setup-aws
+```
+
+「AWS credentials already configured」と表示されたり、認証情報の入力を求められたりした場合は、スキップまたは後の手順で設定します。
+AWS CLIが既にインストール済みの場合は自動でスキップされます。
+
+### 4-4. 環境変数を設定
+
+S3バケット名はリポジトリの `s3-upload/config.json` に設定済みなので、自動で読み込まれます。
 
 ```powershell
 .\setup_and_upload.ps1 -Action setup-local
 ```
 
-### 4-3. S3バケット名を入力
-
-「Enter S3 bucket name」と表示されたら、管理者から受け取ったバケット名を入力:
-
-```
-Enter S3 bucket name: claude-activity-log-XXXXXXXXXXXX
-```
-
-（XXXXXXXXXXXXの部分は管理者から伝えられた値）
-
-### 4-4. AWS認証情報を設定
+### 4-5. AWS認証情報を設定
 
 PowerShellで以下を実行:
 
@@ -189,7 +197,8 @@ aws configure
 ```
 
 順番に入力:
-```
+
+```text
 AWS Access Key ID [None]: （管理者から受け取ったアクセスキー）
 AWS Secret Access Key [None]: （管理者から受け取ったシークレットキー）
 Default region name [None]: ap-northeast-1
@@ -213,17 +222,17 @@ dir $env:USERPROFILE\.claude\usage-tracker-logs\
 ### 5-2. S3にアップロードしてみる
 
 ```powershell
-cd $env:USERPROFILE\s3-upload
+cd $env:USERPROFILE\claude-usage-tracker\s3-upload
 .\setup_and_upload.ps1 -Action upload
 ```
 
 「[UP] events-XXXX-XX-XX.jsonl → s3://...」と表示され、
-「OK」が出れば成功です！
+「OK」が出れば成功です。
 
 ### 5-3. アップロードされたか確認
 
 ```powershell
-aws s3 ls s3://claude-activity-log-XXXXXXXXXXXX/claude-usage-logs/ --recursive
+aws s3 ls s3://claude-activity-log-632903090408/claude-usage-logs/ --recursive
 ```
 
 ファイルが表示されればOKです。
@@ -237,7 +246,7 @@ aws s3 ls s3://claude-activity-log-XXXXXXXXXXXX/claude-usage-logs/ --recursive
 ### 6-1. タスクスケジューラに登録
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File $env:USERPROFILE\s3-upload\setup_and_upload.ps1 -Action upload"
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1 -Action upload"
 $trigger = New-ScheduledTaskTrigger -Daily -At 3am
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries
 
@@ -254,7 +263,7 @@ Get-ScheduledTask -TaskName "Claude Usage Log Upload"
 
 ---
 
-## ✅ セットアップ完了！
+## セットアップ完了
 
 これで設定は完了です。
 
@@ -262,11 +271,12 @@ Get-ScheduledTask -TaskName "Claude Usage Log Upload"
 
 - **普段使い**: いつも通りClaude Codeを使うだけでOK
   - ログは自動で記録されます
-  - 毎日午前3時に自動でS3にアップロードされます
+  - 毎日午前3時に自動でS3にアップロードされます（Step 6を実施した場合）
 
 - **手動でアップロードしたい時**:
+
   ```powershell
-  cd $env:USERPROFILE\s3-upload
+  cd $env:USERPROFILE\claude-usage-tracker\s3-upload
   .\setup_and_upload.ps1 -Action upload
   ```
 
@@ -275,15 +285,20 @@ Get-ScheduledTask -TaskName "Claude Usage Log Upload"
 
 ---
 
-## ❓ トラブルシューティング
+## トラブルシューティング
+
+### 「git が認識されません」
+
+→ Gitをインストール後、PowerShellを再起動してください。
 
 ### 「uv が認識されません」
 
-→ PowerShellを再起動してください
+→ PowerShellを再起動してください。
 
 ### 「スクリプトの実行が無効です」
 
 → 以下を実行:
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -291,8 +306,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### 「デジタル署名されていません」
 
 → 以下を実行:
+
 ```powershell
-Unblock-File -Path $env:USERPROFILE\s3-upload\setup_and_upload.ps1
+Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1
 ```
 
 ### 「Access Denied」
@@ -302,20 +318,22 @@ Unblock-File -Path $env:USERPROFILE\s3-upload\setup_and_upload.ps1
 ### 「ログファイルが見つからない」
 
 → Claude Codeを少し使ってから再確認してください。
-   プラグインが正しくインストールされているか確認:
-   ```
-   /plugin
-   ```
-   → 「Installed」タブに「usage-tracker」があればOK
+プラグインが正しくインストールされているか確認:
+
+```text
+/plugin
+```
+
+→ 「Installed」タブに「usage-tracker」があればOK
 
 ### PCを再起動したらエラーが出る
 
 → 環境変数が読み込まれていない可能性があります。
-   PowerShellを新しく開いて再度お試しください。
+PowerShellを新しく開いて再度お試しください。
 
 ---
 
-## 📞 サポート
+## サポート
 
 問題が解決しない場合は、以下の情報を添えて管理者に連絡してください:
 

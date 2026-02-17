@@ -105,9 +105,10 @@ def get_project_name() -> str:
 
 def create_event_payload(event_type: str, input_data: dict) -> dict:
     """イベントペイロードを作成"""
-    
+
     now = datetime.now(timezone.utc)
-    
+
+    # 全イベント共通フィールド（公式ドキュメント準拠）
     payload = {
         "event_type": event_type,
         "timestamp": now.isoformat(),
@@ -115,47 +116,73 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
         "team_id": CONFIG["team_id"],
         "project": get_project_name(),
         "session_id": input_data.get("session_id", ""),
+        "transcript_path": input_data.get("transcript_path", ""),
+        "cwd": input_data.get("cwd", ""),
+        "permission_mode": input_data.get("permission_mode", ""),
+        "hook_event_name": input_data.get("hook_event_name", event_type),
         "metadata": {}
     }
-    
+
     # イベントタイプ別の追加データ
     if event_type in ["PreToolUse", "PostToolUse"]:
         tool_name = input_data.get("tool_name", "unknown")
         tool_input = input_data.get("tool_input", {})
-        
+
         payload["tool_name"] = tool_name
+        payload["tool_use_id"] = input_data.get("tool_use_id", "")
         payload["categories"] = classify_tool(tool_name, tool_input)
-        
+
         # PostToolUseの場合は成功を記録
         if event_type == "PostToolUse":
             payload["success"] = True
-            # ツール出力のサマリー（長さのみ、内容は送信しない）
-            tool_output = input_data.get("tool_output", "")
-            payload["output_length"] = len(str(tool_output))
-    
+            # ツールレスポンスのサマリー（長さのみ、内容は送信しない）
+            tool_response = input_data.get("tool_response", "")
+            payload["output_length"] = len(str(tool_response))
+
     elif event_type == "PostToolUseFailure":
         payload["tool_name"] = input_data.get("tool_name", "unknown")
+        payload["tool_use_id"] = input_data.get("tool_use_id", "")
         payload["success"] = False
         payload["error"] = input_data.get("error", "")[:200]  # エラーは短縮
-    
+        payload["is_interrupt"] = input_data.get("is_interrupt", False)
+
     elif event_type == "UserPromptSubmit":
         prompt = input_data.get("prompt", "")
         payload["prompt_length"] = len(prompt)
         # プロンプト内容は送信しない（プライバシー保護）
-    
+
     elif event_type == "SessionStart":
-        payload["metadata"]["start_source"] = input_data.get("source", "unknown")
+        payload["metadata"]["source"] = input_data.get("source", "unknown")
         payload["metadata"]["model"] = input_data.get("model", "unknown")
-    
+        payload["metadata"]["agent_type"] = input_data.get("agent_type", "")
+
     elif event_type == "SessionEnd":
-        payload["metadata"]["duration_seconds"] = input_data.get("duration_seconds")
-    
-    elif event_type == "SubagentStop":
+        payload["metadata"]["reason"] = input_data.get("reason", "other")
+
+    elif event_type == "SubagentStart":
+        payload["agent_id"] = input_data.get("agent_id", "")
+        payload["agent_type"] = input_data.get("agent_type", "")
         payload["categories"] = {"subagent": True}
-    
+
+    elif event_type == "SubagentStop":
+        payload["agent_id"] = input_data.get("agent_id", "")
+        payload["agent_type"] = input_data.get("agent_type", "")
+        payload["agent_transcript_path"] = input_data.get("agent_transcript_path", "")
+        payload["stop_hook_active"] = input_data.get("stop_hook_active", False)
+        payload["categories"] = {"subagent": True}
+
+    elif event_type == "Notification":
+        payload["metadata"]["message"] = input_data.get("message", "")
+        payload["metadata"]["title"] = input_data.get("title", "")
+        payload["metadata"]["notification_type"] = input_data.get("notification_type", "")
+
+    elif event_type == "PreCompact":
+        payload["metadata"]["trigger"] = input_data.get("trigger", "")
+        payload["metadata"]["custom_instructions"] = input_data.get("custom_instructions", "")
+
     elif event_type == "Stop":
-        payload["metadata"]["reason"] = input_data.get("reason", "normal")
-    
+        payload["stop_hook_active"] = input_data.get("stop_hook_active", False)
+
     return payload
 
 

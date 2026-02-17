@@ -1,0 +1,13 @@
+{
+  "name": "usage-tracker-marketplace",
+  "owner": {
+    "name": "teHaginoya"
+  },
+  "plugins": [
+    {
+      "name": "usage-tracker",
+      "source": "./usage-tracker",
+      "description": "チームのClaude Code利用状況を収集・可視化するプラグイン。Hookでイベントを収集し、ダッシュボードで分析できます。"
+    }
+  ]
+}
