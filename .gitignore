@@ -24,6 +24,8 @@ build/
 
 # AWS
 .aws/
+*accessKeys*.csv
+*_accessKeys.csv
 
 # Temporary files
 *.tmp

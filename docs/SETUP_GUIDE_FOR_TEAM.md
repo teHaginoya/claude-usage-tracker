@@ -188,6 +188,15 @@ S3バケット名はリポジトリの `s3-upload/config.json` に設定済み�
 .\setup_and_upload.ps1 -Action setup-local
 ```
 
+途中で以下のように聞かれます:
+
+```text
+Enter your user ID (e.g. yamada.taro): （自分の名前を入力、例: yamada.taro）
+```
+
+ここで入力した名前がS3のファイル名に使われます。
+例: `yamada.taro-events-20260217.jsonl`
+
 ### 4-5. AWS認証情報を設定
 
 PowerShellで以下を実行:

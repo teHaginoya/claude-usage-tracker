@@ -45,14 +45,19 @@ LOG_DIR = Path.home() / ".claude" / "usage-tracker-logs"
 
 def get_user_identifier() -> str:
     """ユーザー識別子を取得"""
+    # 環境変数 USAGE_TRACKER_USER_ID が設定されていればそれを優先
+    user_id = os.environ.get("USAGE_TRACKER_USER_ID", "").strip()
+    if user_id:
+        return user_id
+
     username = os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
     hostname = socket.gethostname()
-    
+
     if CONFIG["anonymize_user"]:
         # ハッシュ化して匿名化
         raw = f"{username}@{hostname}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
-    
+
     return f"{username}@{hostname}"
 
 

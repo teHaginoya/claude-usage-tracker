@@ -213,6 +213,19 @@ function Setup-LocalEnvironment {
         $bucket = Read-Host "Enter S3 bucket name"
     }
 
+    # USAGE_TRACKER_USER_ID の設定
+    $currentUserId = [System.Environment]::GetEnvironmentVariable("USAGE_TRACKER_USER_ID", "User")
+    if (-not $currentUserId) {
+        $userId = Read-Host "Enter your user ID (e.g. yamada.taro)"
+        if ($userId) {
+            [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_USER_ID", $userId, "User")
+            $env:USAGE_TRACKER_USER_ID = $userId
+            Write-Success "User ID set: USAGE_TRACKER_USER_ID = $userId"
+        }
+    } else {
+        Write-Success "User ID already configured: USAGE_TRACKER_USER_ID = $currentUserId"
+    }
+
     [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_S3_BUCKET", $bucket, "User")
     [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_S3_PREFIX", $configPrefix, "User")
     [System.Environment]::SetEnvironmentVariable("AWS_REGION", $configRegion, "User")
@@ -307,7 +320,16 @@ function Show-Config {
     }
 }
 
-function Get-IAMUserName {
+function Get-UploadUserName {
+    # 環境変数 USAGE_TRACKER_USER_ID が設定されていればそれを優先
+    $userId = $env:USAGE_TRACKER_USER_ID
+    if (-not $userId) {
+        $userId = [System.Environment]::GetEnvironmentVariable("USAGE_TRACKER_USER_ID", "User")
+    }
+    if ($userId) {
+        return $userId
+    }
+    # フォールバック: IAMユーザー名
     try {
         $arn = aws sts get-caller-identity --query Arn --output text 2>$null
         if ($arn -match "user/(.+)$") {
@@ -355,9 +377,9 @@ function Upload-ToS3 {
         return
     }
     
-    # Get IAM user name
-    $iamUser = Get-IAMUserName
-    Write-Info "IAM User: $iamUser"
+    # Get user name for S3 file naming
+    $iamUser = Get-UploadUserName
+    Write-Info "User: $iamUser"
     
     Write-Host ""
     Write-Host "S3 Bucket: s3://$bucket/$prefix/"
