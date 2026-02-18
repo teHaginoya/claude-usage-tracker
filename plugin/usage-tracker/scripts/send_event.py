@@ -104,6 +104,60 @@ def get_project_name() -> str:
     return "unknown"
 
 
+# 利用上限に関連するキーワード（Claude Codeが出すメッセージ）
+USAGE_LIMIT_KEYWORDS = [
+    "usage limit reached",
+    "claude ai usage limit",
+    "you have reached your usage limit",
+    "you've reached your usage limit",
+    "usage limit has been reached",
+    "daily usage limit",
+    "monthly usage limit",
+    "rate limit reached",
+    "api usage limit",
+    "your claude.ai pro plan",
+    "upgrade your plan",
+    "usage has been exceeded",
+]
+
+
+def detect_stop_reason(transcript_path: str) -> str:
+    """トランスクリプトファイルの末尾を読んで停止理由を判定する。
+
+    Returns:
+        "usage_limit" : 利用上限に達した
+        "normal"      : 正常終了（タスク完了）
+        "unknown"     : 判定不能
+    """
+    if not transcript_path:
+        return "unknown"
+
+    path = Path(transcript_path)
+    if not path.exists():
+        return "unknown"
+
+    try:
+        # 末尾 30 行だけ読む（大きいファイルでも高速）
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+        recent_lines = lines[-30:] if len(lines) >= 30 else lines
+        content_lower = " ".join(recent_lines).lower()
+
+        for keyword in USAGE_LIMIT_KEYWORDS:
+            if keyword in content_lower:
+                return "usage_limit"
+
+        return "normal"
+    except Exception:
+        return "unknown"
+
+
+def is_usage_limit_message(text: str) -> bool:
+    """テキストが利用上限メッセージかどうか判定する"""
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in USAGE_LIMIT_KEYWORDS)
+
+
 # ==============================================================================
 # イベントペイロード作成
 # ==============================================================================
@@ -177,9 +231,13 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
         payload["categories"] = {"subagent": True}
 
     elif event_type == "Notification":
-        payload["metadata"]["message"] = input_data.get("message", "")
-        payload["metadata"]["title"] = input_data.get("title", "")
+        message = input_data.get("message", "")
+        title   = input_data.get("title", "")
+        payload["metadata"]["message"]           = message
+        payload["metadata"]["title"]             = title
         payload["metadata"]["notification_type"] = input_data.get("notification_type", "")
+        # 利用上限通知の検出
+        payload["is_usage_limit"] = is_usage_limit_message(message) or is_usage_limit_message(title)
 
     elif event_type == "PreCompact":
         payload["metadata"]["trigger"] = input_data.get("trigger", "")
@@ -187,6 +245,9 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
 
     elif event_type == "Stop":
         payload["stop_hook_active"] = input_data.get("stop_hook_active", False)
+        # トランスクリプトを読んで停止理由を判定
+        transcript_path = input_data.get("transcript_path", "")
+        payload["stop_reason"] = detect_stop_reason(transcript_path)
 
     return payload
 
