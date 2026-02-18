@@ -92,17 +92,22 @@ def render_overview(team_id: str, days: int):
             x=tl["EVENT_DATE"], y=tl["SESSIONS"],
             name="セッション", line=dict(color="#14b8a6", width=1.5, dash="dot"),
         ))
-        if "LIMIT_HITS" in tl.columns:
+        if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
+            max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
+            # y2 の range を大きめに取り、バーがチャート高さの ~15% 以内に収まるようにする
             fig.add_trace(go.Bar(
                 x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
-                name="制限ヒット", marker_color="rgba(244,63,94,0.55)",
+                name="制限ヒット", marker_color="rgba(244,63,94,0.5)",
                 yaxis="y2",
             ))
             fig.update_layout(
-                yaxis2=dict(overlaying="y", side="right", showgrid=False,
-                            tickfont=dict(color="#f43f5e", size=9)),
+                yaxis2=dict(
+                    overlaying="y", side="right", showgrid=False,
+                    range=[0, max_lim * 8],
+                    showticklabels=False,
+                ),
             )
-        fig.update_layout(title_text="日次利用推移", legend=dict(orientation="h", y=1.1, x=0))
+        fig.update_layout(title_text="日次利用推移", legend=dict(orientation="h", y=1.12, x=0))
         fig = apply_plotly(fig, 280)
         st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

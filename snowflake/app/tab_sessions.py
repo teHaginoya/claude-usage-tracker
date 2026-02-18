@@ -93,20 +93,27 @@ def render_sessions(team_id: str, days: int):
         all_hours = pd.DataFrame({"HOUR_OF_DAY": list(range(24))})
         lim_hr = all_hours.merge(lim_hr, on="HOUR_OF_DAY", how="left").fillna(0)
 
+        # ヒットあり/なしで色分け
+        bar_colors = [
+            "#f43f5e" if v > 0 else "#1f2d4a"
+            for v in lim_hr["LIMIT_HITS"]
+        ]
         fig2 = go.Figure(go.Bar(
             x=lim_hr["HOUR_OF_DAY"],
             y=lim_hr["LIMIT_HITS"],
-            marker=dict(
-                color=lim_hr["LIMIT_HITS"],
-                colorscale=[[0, "#1f2d4a"], [0.5, "#8b5cf6"], [1, "#f43f5e"]],
-                showscale=False,
-            ),
+            marker=dict(color=bar_colors, line=dict(width=0)),
             hovertemplate="%{x}時: %{y}件<extra></extra>",
         ))
         fig2.update_layout(
             title_text="制限ヒット 時間帯別",
-            xaxis=dict(tickmode="linear", tick0=0, dtick=2, title="時刻"),
-            yaxis=dict(title="ヒット数"),
+            xaxis=dict(
+                tickmode="array",
+                tickvals=list(range(0, 24, 3)),
+                ticktext=[f"{h:02d}h" for h in range(0, 24, 3)],
+                title="",
+            ),
+            yaxis=dict(title="", dtick=1),
+            bargap=0.2,
         )
         fig2 = apply_plotly(fig2, 300)
         st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)

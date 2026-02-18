@@ -418,7 +418,7 @@ st.markdown("""
         border-bottom: 1px solid var(--bg-card);
     }
 
-    /* ===== ラジオボタン ===== */
+    /* ===== ラジオボタン（期間選択） ===== */
     .stRadio > div {
         display: flex;
         gap: 0.25rem;
@@ -429,19 +429,43 @@ st.markdown("""
         background: var(--bg-card) !important;
         border: 1px solid var(--border) !important;
         border-radius: 6px !important;
-        padding: 0.3rem 0.75rem !important;
+        padding: 0.3rem 0.9rem !important;
         font-size: 0.75rem !important;
         font-family: var(--mono-font) !important;
         color: var(--text-secondary) !important;
         cursor: pointer;
         transition: all 0.15s;
+        display: flex !important;
+        align-items: center !important;
+        gap: 0 !important;
+    }
+
+    /* ラジオの丸インジケーターを非表示 */
+    .stRadio label > div:first-child,
+    .stRadio label > span:first-child,
+    .stRadio label input[type="radio"],
+    .stRadio label svg {
+        display: none !important;
+    }
+
+    /* ラベルテキストの余白をリセット */
+    .stRadio label p {
+        margin: 0 !important;
+        font-size: 0.75rem !important;
+        font-family: var(--mono-font) !important;
+        line-height: 1 !important;
     }
 
     .stRadio label:has(input:checked) {
         background: var(--accent-amber) !important;
         color: #0a0e1a !important;
         border-color: var(--accent-amber) !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
+    }
+
+    .stRadio label:not(:has(input:checked)):hover {
+        border-color: var(--border-light) !important;
+        color: var(--text-primary) !important;
     }
 
     /* ===== Streamlit 要素の上書き ===== */
@@ -465,6 +489,15 @@ st.markdown("""
         color: var(--text-primary) !important;
         border-radius: 6px !important;
     }
+
+    /* ===== ヘッダー下の余白をタイトに ===== */
+    [data-testid="column"] > div:first-child { padding-top: 0 !important; }
+
+    /* ===== Plotly チャートの白背景を除去 ===== */
+    .js-plotly-plot .plotly { background: transparent !important; }
+
+    /* ===== 全体的な余白調整 ===== */
+    [data-testid="stVerticalBlock"] { gap: 0.75rem; }
 
     /* scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -505,6 +538,12 @@ def main():
         """, unsafe_allow_html=True)
 
     with hdr_r:
+        # 右寄せラッパー
+        st.markdown(
+            '<div style="display:flex;justify-content:flex-end;align-items:center;'
+            'padding-top:0.25rem">',
+            unsafe_allow_html=True,
+        )
         period_options = {"1D": 1, "7D": 7, "30D": 30, "90D": 90, "All": 365}
         selected_period = st.radio(
             "期間",
@@ -513,6 +552,7 @@ def main():
             horizontal=True,
             label_visibility="collapsed",
         )
+        st.markdown("</div>", unsafe_allow_html=True)
         days = period_options[selected_period]
 
     team_id = "default-team"

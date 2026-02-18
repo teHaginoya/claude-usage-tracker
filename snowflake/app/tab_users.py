@@ -145,13 +145,22 @@ def render_user_detail(team_id: str, user_id: str, display_name: str, days: int,
             name="メッセージ", line=dict(color="#f59e0b", width=2),
             fill="tozeroy", fillcolor="rgba(245,158,11,0.06)",
         ))
-        if "LIMIT_HITS" in tl.columns:
+        if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
+            max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
             fig.add_trace(go.Bar(
                 x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
                 name="制限ヒット", marker_color="rgba(244,63,94,0.5)",
+                yaxis="y2",
             ))
+            fig.update_layout(
+                yaxis2=dict(
+                    overlaying="y", side="right", showgrid=False,
+                    range=[0, max_lim * 8],
+                    showticklabels=False,
+                ),
+            )
         fig.update_layout(title_text="日次利用推移",
-                          legend=dict(orientation="h", y=1.1, x=0))
+                          legend=dict(orientation="h", y=1.12, x=0))
         fig = apply_plotly(fig, 240)
         st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
