@@ -433,10 +433,18 @@ function Upload-ToS3 {
             $uploadedCount++
         } else {
             Write-Host "  [UP]  $fileName -> s3://$bucket/$s3Key"
-            
+
             try {
-                aws s3 cp $file.FullName "s3://$bucket/$s3Key" --quiet
-                Write-Host "        OK" -ForegroundColor Green
+                $output = aws s3 cp $file.FullName "s3://$bucket/$s3Key" --quiet 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "aws s3 cp exited with code $LASTEXITCODE : $output"
+                }
+                # Verify the file actually exists in S3
+                $check = aws s3api head-object --bucket $bucket --key $s3Key 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Upload verification failed: file not found in S3"
+                }
+                Write-Host "        OK (verified)" -ForegroundColor Green
                 $newlyUploaded += $fileName
                 $uploadedCount++
             } catch {
