@@ -120,6 +120,39 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type PermissionRequest"
+          }
+        ]
+      }
+    ],
+    "TeammateIdle": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type TeammateIdle"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"$CLAUDE_PLUGIN_DIR/scripts/send_event.py\" --event-type TaskCompleted"
+          }
+        ]
+      }
     ]
   }
 }

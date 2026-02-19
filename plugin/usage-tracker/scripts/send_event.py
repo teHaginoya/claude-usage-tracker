@@ -163,11 +163,11 @@ def is_usage_limit_message(text: str) -> bool:
 # ==============================================================================
 
 def create_event_payload(event_type: str, input_data: dict) -> dict:
-    """イベントペイロードを作成"""
+    """イベントペイロードを作成（全情報取得版）"""
 
     now = datetime.now(timezone.utc)
 
-    # 全イベント共通フィールド（公式ドキュメント準拠）
+    # ── 共通フィールド ──────────────────────────────────────────
     payload = {
         "event_type": event_type,
         "timestamp": now.isoformat(),
@@ -179,44 +179,45 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
         "cwd": input_data.get("cwd", ""),
         "permission_mode": input_data.get("permission_mode", ""),
         "hook_event_name": input_data.get("hook_event_name", event_type),
-        "metadata": {}
     }
 
-    # イベントタイプ別の追加データ
+    # ── stdin の生データをそのまま保存 ─────────────────────────
+    payload["raw_input"] = input_data
+
+    # ── イベントタイプ別の付加情報（分類・検出） ──────────────
     if event_type in ["PreToolUse", "PostToolUse"]:
         tool_name = input_data.get("tool_name", "unknown")
         tool_input = input_data.get("tool_input", {})
-
         payload["tool_name"] = tool_name
         payload["tool_use_id"] = input_data.get("tool_use_id", "")
+        payload["tool_input"] = tool_input
         payload["categories"] = classify_tool(tool_name, tool_input)
-
-        # PostToolUseの場合は成功を記録
         if event_type == "PostToolUse":
             payload["success"] = True
-            # ツールレスポンスのサマリー（長さのみ、内容は送信しない）
-            tool_response = input_data.get("tool_response", "")
-            payload["output_length"] = len(str(tool_response))
+            payload["tool_response"] = input_data.get("tool_response", "")
+            payload["output_length"] = len(str(payload["tool_response"]))
 
     elif event_type == "PostToolUseFailure":
         payload["tool_name"] = input_data.get("tool_name", "unknown")
         payload["tool_use_id"] = input_data.get("tool_use_id", "")
+        payload["tool_input"] = input_data.get("tool_input", {})
         payload["success"] = False
-        payload["error"] = input_data.get("error", "")[:200]  # エラーは短縮
+        payload["error"] = input_data.get("error", "")
         payload["is_interrupt"] = input_data.get("is_interrupt", False)
+        payload["categories"] = classify_tool(
+            payload["tool_name"], payload["tool_input"])
 
     elif event_type == "UserPromptSubmit":
-        prompt = input_data.get("prompt", "")
-        payload["prompt_length"] = len(prompt)
-        # プロンプト内容は送信しない（プライバシー保護）
+        payload["prompt"] = input_data.get("prompt", "")
+        payload["prompt_length"] = len(payload["prompt"])
 
     elif event_type == "SessionStart":
-        payload["metadata"]["source"] = input_data.get("source", "unknown")
-        payload["metadata"]["model"] = input_data.get("model", "unknown")
-        payload["metadata"]["agent_type"] = input_data.get("agent_type", "")
+        payload["source"] = input_data.get("source", "unknown")
+        payload["model"] = input_data.get("model", "unknown")
+        payload["agent_type"] = input_data.get("agent_type", "")
 
     elif event_type == "SessionEnd":
-        payload["metadata"]["reason"] = input_data.get("reason", "other")
+        payload["reason"] = input_data.get("reason", "other")
 
     elif event_type == "SubagentStart":
         payload["agent_id"] = input_data.get("agent_id", "")
@@ -228,24 +229,25 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
         payload["agent_type"] = input_data.get("agent_type", "")
         payload["agent_transcript_path"] = input_data.get("agent_transcript_path", "")
         payload["stop_hook_active"] = input_data.get("stop_hook_active", False)
+        payload["last_assistant_message"] = input_data.get("last_assistant_message", "")
         payload["categories"] = {"subagent": True}
 
     elif event_type == "Notification":
-        message = input_data.get("message", "")
-        title   = input_data.get("title", "")
-        payload["metadata"]["message"]           = message
-        payload["metadata"]["title"]             = title
-        payload["metadata"]["notification_type"] = input_data.get("notification_type", "")
-        # 利用上限通知の検出
-        payload["is_usage_limit"] = is_usage_limit_message(message) or is_usage_limit_message(title)
+        payload["message"] = input_data.get("message", "")
+        payload["title"] = input_data.get("title", "")
+        payload["notification_type"] = input_data.get("notification_type", "")
+        payload["is_usage_limit"] = (
+            is_usage_limit_message(payload["message"])
+            or is_usage_limit_message(payload["title"])
+        )
 
     elif event_type == "PreCompact":
-        payload["metadata"]["trigger"] = input_data.get("trigger", "")
-        payload["metadata"]["custom_instructions"] = input_data.get("custom_instructions", "")
+        payload["trigger"] = input_data.get("trigger", "")
+        payload["custom_instructions"] = input_data.get("custom_instructions", "")
 
     elif event_type == "Stop":
         payload["stop_hook_active"] = input_data.get("stop_hook_active", False)
-        # トランスクリプトを読んで停止理由を判定
+        payload["last_assistant_message"] = input_data.get("last_assistant_message", "")
         transcript_path = input_data.get("transcript_path", "")
         payload["stop_reason"] = detect_stop_reason(transcript_path)
 
