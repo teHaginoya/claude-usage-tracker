@@ -1,6 +1,6 @@
 ---
 name: doc-coauthoring
-description: Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.
+description: Guide users through a structured 3-stage workflow for co-authoring high-quality documents. Use when user says "write a doc", "draft a proposal", "create a spec", "write up", "help me write", or mentions specific doc types (PRD, design doc, decision doc, RFC, technical spec, architecture doc). Covers context gathering, section-by-section refinement, and reader testing with a fresh Claude instance to catch blind spots.
 ---
 
 # Doc Co-Authoring Workflow
