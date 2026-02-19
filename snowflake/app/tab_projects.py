@@ -26,12 +26,12 @@ def render_projects(team_id: str, days: int):
         orientation="h",
         marker=dict(
             color=proj_df["EVENT_COUNT"],
-            colorscale=[[0, "#1f2d4a"], [0.5, "#3b82f6"], [1, "#14b8a6"]],
+            colorscale=[[0, "#dbeafe"], [0.5, "#3b82f6"], [1, "#1d4ed8"]],
             showscale=False,
         ),
         text=proj_df["EVENT_COUNT"],
         textposition="outside",
-        textfont=dict(size=10, color="#8899b8"),
+        textfont=dict(size=10, color="#64748b"),
         customdata=proj_df[["USER_COUNT", "MSG_COUNT"]].values,
         hovertemplate=(
             "<b>%{y}</b><br>"

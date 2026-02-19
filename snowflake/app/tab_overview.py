@@ -86,18 +86,17 @@ def render_overview(team_id: str, days: int):
         fig.add_trace(go.Scatter(
             x=tl["EVENT_DATE"], y=tl["MESSAGES"],
             name="メッセージ", line=dict(color="#f59e0b", width=2),
-            fill="tozeroy", fillcolor="rgba(245,158,11,0.06)",
+            fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
         ))
         fig.add_trace(go.Scatter(
             x=tl["EVENT_DATE"], y=tl["SESSIONS"],
-            name="セッション", line=dict(color="#14b8a6", width=1.5, dash="dot"),
+            name="セッション", line=dict(color="#0d9488", width=1.5, dash="dot"),
         ))
         if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
             max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
-            # y2 の range を大きめに取り、バーがチャート高さの ~15% 以内に収まるようにする
             fig.add_trace(go.Bar(
                 x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
-                name="制限ヒット", marker_color="rgba(244,63,94,0.5)",
+                name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
                 yaxis="y2",
             ))
             fig.update_layout(
@@ -130,12 +129,19 @@ def render_overview(team_id: str, days: int):
             z=pivot.values,
             x=[f"{h:02d}h" for h in pivot.columns],
             y=pivot.index.tolist(),
-            colorscale=[[0, "#141c2e"], [0.4, "#1f2d4a"], [0.7, "#8b5cf6"], [1, "#f59e0b"]],
+            colorscale=[[0, "#e8edf5"], [0.3, "#bae6fd"], [0.65, "#0d9488"], [1, "#f59e0b"]],
             showscale=False,
             hoverongaps=False,
             hovertemplate="曜日: %{y}<br>時刻: %{x}<br>件数: %{z}<extra></extra>",
         ))
-        fig2.update_layout(title_text="時間帯 × 曜日ヒートマップ")
+        fig2.update_layout(
+            title_text="時間帯 × 曜日ヒートマップ",
+            xaxis=dict(side="bottom"),
+        )
+        fig2.update_xaxes(
+            tickvals=[f"{h:02d}h" for h in range(0, 24, 4)],
+            ticktext=[f"{h:02d}h" for h in range(0, 24, 4)],
+        )
         fig2 = apply_plotly(fig2, 280)
         st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})

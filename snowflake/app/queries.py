@@ -21,7 +21,7 @@ def get_kpi_overview(team_id: str, days: int) -> pd.DataFrame:
             COUNT(DISTINCT USER_ID)                                               AS ACTIVE_USERS,
             COUNT(CASE WHEN IS_SKILL = TRUE THEN 1 END)                          AS SKILL_COUNT,
             COUNT(CASE WHEN IS_MCP   = TRUE THEN 1 END)                          AS MCP_COUNT,
-            COUNT(CASE WHEN METADATA:is_usage_limit::BOOLEAN = TRUE THEN 1 END)  AS LIMIT_HITS
+            COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END)  AS LIMIT_HITS
         FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
         WHERE TEAM_ID = '{team_id}'
           AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
@@ -67,7 +67,7 @@ def get_timeline_data(team_id: str, days: int) -> pd.DataFrame:
         COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit'           THEN 1 END)   AS MESSAGES,
         COUNT(CASE WHEN EVENT_TYPE IN ('PostToolUse','PreToolUse') THEN 1 END)  AS TOOLS,
         COUNT(CASE WHEN EVENT_TYPE = 'SessionStart'               THEN 1 END)   AS SESSIONS,
-        COUNT(CASE WHEN METADATA:is_usage_limit::BOOLEAN = TRUE   THEN 1 END)   AS LIMIT_HITS
+        COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE   THEN 1 END)   AS LIMIT_HITS
     FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND EVENT_TIMESTAMP >= DATEADD('day', -{min(days, 90)}, CURRENT_TIMESTAMP())
@@ -114,7 +114,7 @@ def get_user_stats(team_id: str, days: int, limit: int = 30) -> pd.DataFrame:
         COUNT(CASE WHEN IS_COMMAND  = TRUE THEN 1 END)                           AS COMMAND_COUNT,
         COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END)              AS MESSAGE_COUNT,
         COUNT(CASE WHEN EVENT_TYPE = 'SessionStart'     THEN 1 END)              AS SESSION_COUNT,
-        COUNT(CASE WHEN METADATA:is_usage_limit::BOOLEAN = TRUE THEN 1 END)      AS LIMIT_HITS,
+        COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END)      AS LIMIT_HITS,
         COUNT(*)                                                                  AS TOTAL_COUNT,
         MAX(EVENT_TIMESTAMP)                                                      AS LAST_ACTIVE,
         MIN(DATE_TRUNC('day', EVENT_TIMESTAMP))::DATE                            AS FIRST_ACTIVE
@@ -139,7 +139,7 @@ def get_user_detail_timeline(team_id: str, user_id: str, days: int) -> pd.DataFr
         DATE_TRUNC('day', EVENT_TIMESTAMP)::DATE                               AS EVENT_DATE,
         COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END)            AS MESSAGES,
         COUNT(CASE WHEN EVENT_TYPE = 'SessionStart'     THEN 1 END)            AS SESSIONS,
-        COUNT(CASE WHEN METADATA:is_usage_limit::BOOLEAN = TRUE THEN 1 END)    AS LIMIT_HITS
+        COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END)    AS LIMIT_HITS
     FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND USER_ID = '{safe_uid}'
@@ -244,8 +244,8 @@ def get_session_kpi(team_id: str, days: int) -> pd.DataFrame:
             USER_ID,
             MIN(EVENT_TIMESTAMP) AS start_time,
             MAX(EVENT_TIMESTAMP) AS end_time,
-            MAX(CASE WHEN METADATA:stop_reason::STRING = 'usage_limit' THEN 1 ELSE 0 END) AS is_limit,
-            COALESCE(MAX(METADATA:stop_reason::STRING), 'unknown') AS stop_reason
+            MAX(CASE WHEN STOP_REASON = 'usage_limit' THEN 1 ELSE 0 END) AS is_limit,
+            COALESCE(MAX(STOP_REASON), 'unknown') AS stop_reason
         FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
         WHERE TEAM_ID = '{team_id}'
           AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
@@ -269,7 +269,7 @@ def get_session_kpi(team_id: str, days: int) -> pd.DataFrame:
 def get_stop_reason_data(team_id: str, days: int) -> pd.DataFrame:
     query = f"""
     SELECT
-        COALESCE(METADATA:stop_reason::STRING, 'unknown') AS STOP_REASON,
+        COALESCE(STOP_REASON, 'unknown') AS STOP_REASON,
         COUNT(DISTINCT SESSION_ID)                         AS SESSION_COUNT
     FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
     WHERE TEAM_ID = '{team_id}'
@@ -292,7 +292,7 @@ def get_limit_hit_by_hour(team_id: str, days: int) -> pd.DataFrame:
         COUNT(*)              AS LIMIT_HITS
     FROM CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS
     WHERE TEAM_ID = '{team_id}'
-      AND METADATA:is_usage_limit::BOOLEAN = TRUE
+      AND IS_USAGE_LIMIT = TRUE
       AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
     GROUP BY 1
     ORDER BY 1
@@ -310,7 +310,7 @@ def get_limit_hit_by_hour(team_id: str, days: int) -> pd.DataFrame:
 def get_project_ranking(team_id: str, days: int, limit: int = 15) -> pd.DataFrame:
     query = f"""
     SELECT
-        COALESCE(PROJECT_PATH, '(no project)') AS PROJECT_NAME,
+        COALESCE(PROJECT_NAME, '(no project)') AS PROJECT_NAME,
         COUNT(*)                               AS EVENT_COUNT,
         COUNT(DISTINCT USER_ID)               AS USER_COUNT,
         COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END) AS MSG_COUNT,

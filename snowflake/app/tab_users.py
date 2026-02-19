@@ -143,13 +143,13 @@ def render_user_detail(team_id: str, user_id: str, display_name: str, days: int,
         fig.add_trace(go.Scatter(
             x=tl["EVENT_DATE"], y=tl["MESSAGES"],
             name="メッセージ", line=dict(color="#f59e0b", width=2),
-            fill="tozeroy", fillcolor="rgba(245,158,11,0.06)",
+            fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
         ))
         if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
             max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
             fig.add_trace(go.Bar(
                 x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
-                name="制限ヒット", marker_color="rgba(244,63,94,0.5)",
+                name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
                 yaxis="y2",
             ))
             fig.update_layout(
@@ -169,9 +169,14 @@ def render_user_detail(team_id: str, user_id: str, display_name: str, days: int,
     with tc:
         fig2 = go.Figure(go.Bar(
             x=top_tools[tc2], y=top_tools[tc1],
-            orientation="h", marker_color="#8b5cf6",
+            orientation="h",
+            marker=dict(
+                color=top_tools[tc2],
+                colorscale=[[0, "#ede9fe"], [1, "#7c3aed"]],
+                showscale=False,
+            ),
             text=top_tools[tc2], textposition="outside",
-            textfont=dict(size=10, color="#8899b8"),
+            textfont=dict(size=10, color="#64748b"),
         ))
         fig2.update_layout(
             title_text="Top ツール使用",

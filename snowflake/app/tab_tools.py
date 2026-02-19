@@ -29,12 +29,12 @@ def render_tools(team_id: str, days: int):
             orientation="h",
             marker=dict(
                 color=tool_df["TOTAL_COUNT"],
-                colorscale=[[0, "#1f2d4a"], [0.5, "#3b82f6"], [1, "#14b8a6"]],
+                colorscale=[[0, "#ccfbf1"], [0.5, "#14b8a6"], [1, "#0d9488"]],
                 showscale=False,
             ),
             text=tool_df["TOTAL_COUNT"],
             textposition="outside",
-            textfont=dict(size=10, color="#8899b8"),
+            textfont=dict(size=10, color="#64748b"),
         ))
         fig.update_layout(
             title_text="ツール利用ランキング",
@@ -56,11 +56,11 @@ def render_tools(team_id: str, days: int):
 
             if rate is None or str(rate) == "nan":
                 rate_html = '<span style="color:var(--text-muted)">—</span>'
-                bar_pct, bar_color = 0, "#4a5c7a"
+                bar_pct, bar_color = 0, "#e2e8f0"
             else:
                 rate = float(rate)
                 bar_pct   = rate
-                bar_color = "#22c55e" if rate >= 90 else "#f59e0b" if rate >= 70 else "#f43f5e"
+                bar_color = "#16a34a" if rate >= 90 else "#f59e0b" if rate >= 70 else "#e11d48"
                 rate_html = (
                     f'<span style="color:{bar_color};font-family:var(--mono-font)">'
                     f"{rate:.1f}%</span>"
@@ -103,7 +103,7 @@ def render_tools(team_id: str, days: int):
 
     fig3 = px.line(
         trend, x="EVENT_DATE", y="CNT", color="TOOL_NAME",
-        color_discrete_sequence=["#f59e0b", "#14b8a6", "#8b5cf6", "#3b82f6", "#22c55e"],
+        color_discrete_sequence=["#f59e0b", "#0d9488", "#8b5cf6", "#3b82f6", "#16a34a"],
         labels={"EVENT_DATE": "", "CNT": "実行数", "TOOL_NAME": "ツール"},
     )
     fig3.update_layout(

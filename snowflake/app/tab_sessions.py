@@ -21,10 +21,18 @@ def render_sessions(team_id: str, days: int):
     kpi_df.columns = [c.upper() for c in kpi_df.columns]
     kpi = kpi_df.iloc[0]
 
-    total_sess  = int(kpi.get("TOTAL_SESSIONS",   0))
-    avg_dur     = float(kpi.get("AVG_DURATION_MIN", 0) or 0)
-    lim_stopped = int(kpi.get("LIMIT_STOPPED",    0))
-    nrm_stopped = int(kpi.get("NORMAL_STOPPED",   0))
+    def _si(key, d=0):
+        """NaN / None を含む値を安全に int へ変換する"""
+        try:
+            return int(kpi.get(key, d))
+        except (TypeError, ValueError):
+            return d
+
+    total_sess  = _si("TOTAL_SESSIONS",  0)
+    _avg_raw    = kpi.get("AVG_DURATION_MIN", 0.0)
+    avg_dur     = float(_avg_raw) if not pd.isna(_avg_raw) else 0.0
+    lim_stopped = _si("LIMIT_STOPPED",   0)
+    nrm_stopped = _si("NORMAL_STOPPED",  0)
     lim_pct     = round(lim_stopped / total_sess * 100, 1) if total_sess > 0 else 0.0
 
     c1, c2, c3, c4 = st.columns(4)
@@ -57,23 +65,23 @@ def render_sessions(team_id: str, days: int):
         stop_df.columns = [c.upper() for c in stop_df.columns]
 
         label_map = {"normal": "正常終了", "usage_limit": "利用制限", "unknown": "不明"}
-        color_map = {"正常終了": "#22c55e", "利用制限": "#f43f5e", "不明": "#4a5c7a"}
+        color_map = {"正常終了": "#16a34a", "利用制限": "#e11d48", "不明": "#94a3b8"}
         labels = [label_map.get(str(x), str(x)) for x in stop_df["STOP_REASON"]]
         colors = [color_map.get(l, "#8b5cf6") for l in labels]
 
         fig = go.Figure(go.Pie(
             labels=labels, values=stop_df["SESSION_COUNT"],
-            hole=0.6,
-            marker=dict(colors=colors, line=dict(color="#0a0e1a", width=2)),
+            hole=0.62,
+            marker=dict(colors=colors, line=dict(color="#ffffff", width=3)),
             textinfo="label+percent",
-            textfont=dict(size=11),
+            textfont=dict(size=11, color="#0f172a"),
         ))
         fig.update_layout(
             title_text="停止理由の内訳",
             annotations=[dict(
-                text=f"{total_sess}<br>Sessions",
-                x=0.5, y=0.5, font_size=14, showarrow=False,
-                font=dict(color="#e8edf5"),
+                text=f"{total_sess}<br><span style='font-size:10px'>Sessions</span>",
+                x=0.5, y=0.5, font_size=15, showarrow=False,
+                font=dict(color="#0f172a"),
             )],
             showlegend=True,
             legend=dict(orientation="h", y=-0.1, x=0.1),
@@ -95,7 +103,7 @@ def render_sessions(team_id: str, days: int):
 
         # ヒットあり/なしで色分け
         bar_colors = [
-            "#f43f5e" if v > 0 else "#1f2d4a"
+            "#e11d48" if v > 0 else "#e2e8f0"
             for v in lim_hr["LIMIT_HITS"]
         ]
         fig2 = go.Figure(go.Bar(

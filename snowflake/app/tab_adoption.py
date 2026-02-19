@@ -5,7 +5,7 @@
 import streamlit as st
 import plotly.graph_objects as go
 
-from helpers import apply_plotly, kpi_card, section
+from helpers import apply_plotly, section
 from queries import get_monthly_active, get_feature_adoption
 from demo_data import demo_monthly, demo_feature_adoption
 
@@ -24,19 +24,19 @@ def render_adoption(team_id: str, days: int):
         x=monthly["MONTH"], y=monthly["ACTIVE_USERS"],
         name="月次アクティブユーザー",
         line=dict(color="#f59e0b", width=2.5),
-        fill="tozeroy", fillcolor="rgba(245,158,11,0.06)",
+        fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
         marker=dict(size=6, color="#f59e0b"),
     ))
     fig.add_trace(go.Bar(
         x=monthly["MONTH"], y=monthly["SESSIONS"],
         name="セッション数",
-        marker_color="rgba(20,184,166,0.25)",
+        marker_color="rgba(13,148,136,0.25)",
         yaxis="y2",
     ))
     fig.update_layout(
         title_text="月次アクティブユーザー推移",
         yaxis2=dict(overlaying="y", side="right", showgrid=False,
-                    tickfont=dict(color="#14b8a6", size=9)),
+                    tickfont=dict(color="#0d9488", size=9)),
         legend=dict(orientation="h", y=1.1, x=0),
     )
     fig = apply_plotly(fig, 280)
@@ -54,9 +54,9 @@ def render_adoption(team_id: str, days: int):
 
     total = int(fa.get("TOTAL_USERS", 1)) or 1
     features = [
-        ("Skill",    int(fa.get("SKILL_USERS",    0)), "#14b8a6", "var(--accent-teal)"),
+        ("Skill",    int(fa.get("SKILL_USERS",    0)), "#0d9488", "var(--accent-teal)"),
         ("MCP",      int(fa.get("MCP_USERS",      0)), "#8b5cf6", "var(--accent-violet)"),
-        ("Subagent", int(fa.get("SUBAGENT_USERS", 0)), "#22c55e", "var(--accent-green)"),
+        ("Subagent", int(fa.get("SUBAGENT_USERS", 0)), "#16a34a", "var(--accent-green)"),
         ("Command",  int(fa.get("COMMAND_USERS",  0)), "#3b82f6", "var(--accent-blue)"),
     ]
 
@@ -92,7 +92,7 @@ def render_adoption(team_id: str, days: int):
             marker=dict(color=feat_colors),
             text=[f"{p}%" for p in feat_pcts],
             textposition="outside",
-            textfont=dict(size=11, color="#8899b8"),
+            textfont=dict(size=11, color="#8b949e"),
         ))
         fig2.update_layout(
             title_text="機能活用率 (%)",
