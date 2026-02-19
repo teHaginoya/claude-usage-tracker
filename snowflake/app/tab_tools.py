@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, section
 from queries import get_tool_stats, get_tool_trend
-from demo_data import demo_tools, demo_tool_trend
 
 
 def render_tools(team_id: str, days: int):
@@ -16,7 +15,8 @@ def render_tools(team_id: str, days: int):
 
     tool_df = get_tool_stats(team_id, days)
     if tool_df.empty:
-        tool_df = demo_tools()
+        st.info("期間内のツールデータがありません")
+        return
     tool_df.columns = [c.upper() for c in tool_df.columns]
 
     c1, c2 = st.columns([3, 2])
@@ -40,14 +40,11 @@ def render_tools(team_id: str, days: int):
             title_text="ツール利用ランキング",
             yaxis={"categoryorder": "total ascending"},
         )
-        fig = apply_plotly(fig, 400)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+        fig = apply_plotly(fig, 500)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # ── 成功率テーブル ───────────────────────────────────────────
     with c2:
-        section("成功率")
         rows_html = ""
         for _, row in tool_df.head(10).iterrows():
             name  = str(row.get("TOOL_NAME",    "—"))
@@ -98,7 +95,8 @@ def render_tools(team_id: str, days: int):
     section("ツール利用トレンド（上位5）")
     trend = get_tool_trend(team_id, days)
     if trend.empty:
-        trend = demo_tool_trend(days)
+        st.info("ツールトレンドデータがありません")
+        return
     trend.columns = [c.upper() for c in trend.columns]
 
     fig3 = px.line(
@@ -108,9 +106,13 @@ def render_tools(team_id: str, days: int):
     )
     fig3.update_layout(
         title_text="Top 5 ツール 日次推移",
-        legend=dict(orientation="h", y=1.1, x=0),
+        legend=dict(
+            orientation="h", y=-0.28, x=0, xanchor="left",
+            title=dict(text="ツール", side="left"),
+        ),
     )
-    fig3 = apply_plotly(fig3, 240)
+    fig3 = apply_plotly(fig3, 300)
+    fig3.update_layout(margin=dict(b=100, r=20))
     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
     st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
     st.markdown("</div>", unsafe_allow_html=True)

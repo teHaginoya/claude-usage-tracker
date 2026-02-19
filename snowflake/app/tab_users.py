@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, kpi_card, section, time_ago, rank_icon
 from queries import get_user_stats, get_user_detail_timeline, get_user_top_tools
-from demo_data import demo_users, demo_user_timeline, demo_user_top_tools
 
 
 def render_users(team_id: str, days: int):
@@ -15,7 +14,8 @@ def render_users(team_id: str, days: int):
 
     df = get_user_stats(team_id, days)
     if df.empty:
-        df = demo_users()
+        st.info("期間内のユーザーデータがありません")
+        return
     df.columns = [c.upper() for c in df.columns]
 
     # ── ランキングテーブル ────────────────────────────────────────
@@ -125,64 +125,67 @@ def render_user_detail(team_id: str, user_id: str, display_name: str, days: int,
 
     # 日次推移 + Top ツール
     tl = get_user_detail_timeline(team_id, user_id, days)
-    if tl.empty:
-        tl = demo_user_timeline(days)
-    tl.columns = [c.upper() for c in tl.columns]
-
     top_tools = get_user_top_tools(team_id, user_id, days)
-    if top_tools.empty:
-        top_tools = demo_user_top_tools()
-    top_tools.columns = [c.upper() for c in top_tools.columns]
-    tc1 = top_tools.columns[0]  # ツール名列
-    tc2 = top_tools.columns[1]  # 件数列
 
-    dc, tc = st.columns([3, 2])
+    dc, tc = st.columns([1, 1])
 
     with dc:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=tl["EVENT_DATE"], y=tl["MESSAGES"],
-            name="メッセージ", line=dict(color="#f59e0b", width=2),
-            fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
-        ))
-        if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
-            max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
-            fig.add_trace(go.Bar(
-                x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
-                name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
-                yaxis="y2",
+        if tl.empty:
+            st.info("利用推移データがありません")
+        else:
+            tl.columns = [c.upper() for c in tl.columns]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=tl["EVENT_DATE"], y=tl["MESSAGES"],
+                name="メッセージ", line=dict(color="#f59e0b", width=2),
+                fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
             ))
-            fig.update_layout(
-                yaxis2=dict(
-                    overlaying="y", side="right", showgrid=False,
-                    range=[0, max_lim * 8],
-                    showticklabels=False,
-                ),
-            )
-        fig.update_layout(title_text="日次利用推移",
-                          legend=dict(orientation="h", y=1.12, x=0))
-        fig = apply_plotly(fig, 240)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+            if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
+                max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
+                fig.add_trace(go.Bar(
+                    x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
+                    name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
+                    yaxis="y2",
+                ))
+                fig.update_layout(
+                    yaxis2=dict(
+                        overlaying="y", side="right", showgrid=False,
+                        range=[0, max_lim * 8],
+                        showticklabels=False,
+                    ),
+                )
+            fig.update_layout(title_text="日次利用推移",
+                              legend=dict(orientation="h", y=1.12, x=0))
+            fig = apply_plotly(fig, 240)
+            st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.markdown("</div>", unsafe_allow_html=True)
 
     with tc:
-        fig2 = go.Figure(go.Bar(
-            x=top_tools[tc2], y=top_tools[tc1],
-            orientation="h",
-            marker=dict(
-                color=top_tools[tc2],
-                colorscale=[[0, "#ede9fe"], [1, "#7c3aed"]],
-                showscale=False,
-            ),
-            text=top_tools[tc2], textposition="outside",
-            textfont=dict(size=10, color="#64748b"),
-        ))
-        fig2.update_layout(
-            title_text="Top ツール使用",
-            yaxis={"categoryorder": "total ascending"},
-        )
-        fig2 = apply_plotly(fig2, 240)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+        if top_tools.empty:
+            st.info("ツールデータがありません")
+        else:
+            top_tools.columns = [c.upper() for c in top_tools.columns]
+            tc1 = top_tools.columns[0]
+            tc2 = top_tools.columns[1]
+            fig2 = go.Figure(go.Bar(
+                x=top_tools[tc2], y=top_tools[tc1],
+                orientation="h",
+                marker=dict(
+                    color=top_tools[tc2],
+                    colorscale=[[0, "#ede9fe"], [1, "#7c3aed"]],
+                    showscale=False,
+                ),
+                text=top_tools[tc2], textposition="outside",
+                textfont=dict(size=10, color="#64748b"),
+            ))
+            max_val = int(top_tools[tc2].max()) if not top_tools.empty else 1
+            fig2.update_layout(
+                title_text="Top ツール使用",
+                yaxis={"categoryorder": "total ascending"},
+                xaxis=dict(range=[0, max_val * 1.25]),
+            )
+            fig2 = apply_plotly(fig2, 240)
+            st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+            st.markdown("</div>", unsafe_allow_html=True)

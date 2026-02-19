@@ -5,7 +5,7 @@
 
 USE WAREHOUSE CLAUDE_USAGE_WH;
 USE DATABASE  CLAUDE_USAGE_DB;
-USE SCHEMA    USAGE_TRACKING;
+USE SCHEMA    LAYER3;
 
 -- ============================================================================
 -- パターン A: ローカル JSONL ファイルを内部ステージ経由で取り込む（推奨）
@@ -16,7 +16,7 @@ USE SCHEMA    USAGE_TRACKING;
 -- 【手順】
 --   1. SnowSQL または Snowflake CLI でアップロード:
 --      PUT file://~/.claude/usage-tracker-logs/events-*.jsonl
---          @CLAUDE_USAGE_DB.USAGE_TRACKING.CLAUDE_USAGE_INTERNAL_STAGE
+--          @CLAUDE_USAGE_DB.LAYER3.CLAUDE_USAGE_INTERNAL_STAGE
 --          AUTO_COMPRESS=TRUE;
 --   2. 以下の COPY INTO を実行
 -- ============================================================================
@@ -46,7 +46,7 @@ FROM (
     SELECT
         -- 基本フィールド
         $1:event_type::VARCHAR,
-        TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR),
+        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo', TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR)),  -- UTC → JST
         $1:user_id::VARCHAR,
         COALESCE($1:team_id::VARCHAR, 'default-team'),
         $1:session_id::VARCHAR,
@@ -104,7 +104,7 @@ COPY INTO USAGE_EVENTS (
 FROM (
     SELECT
         $1:event_type::VARCHAR,
-        TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR),
+        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo', TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR)),  -- UTC → JST
         $1:user_id::VARCHAR,
         COALESCE($1:team_id::VARCHAR, 'default-team'),
         $1:session_id::VARCHAR,
@@ -132,7 +132,7 @@ ON_ERROR = 'CONTINUE';
 -- ============================================================================
 -- TROCCO の設定：
 -- ソース      : S3 (JSONL)
--- デスティネーション : Snowflake (CLAUDE_USAGE_DB.USAGE_TRACKING.USAGE_EVENTS)
+-- デスティネーション : Snowflake (CLAUDE_USAGE_DB.LAYER3.USAGE_EVENTS)
 --
 -- カラムマッピング:
 --   event_type                    → EVENT_TYPE

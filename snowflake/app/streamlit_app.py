@@ -88,15 +88,15 @@ st.markdown("""
     #MainMenu, footer, header, .stDeployButton { visibility: hidden; }
 
     /* ===== ヘッダーエリア ===== */
-    /* Streamlit カラムの中でロゴを縦中央揃え */
-    [data-testid="column"]:first-child > div:first-child {
+    /* ロゴ列のみ縦中央揃え（dash-logoを含む列に限定） */
+    [data-testid="column"]:first-child:has(.dash-logo) > div:first-child {
         display: flex;
         align-items: center;
         min-height: 52px;
     }
 
-    /* 期間ボタンも縦中央揃え */
-    [data-testid="column"]:last-child > div:first-child {
+    /* 期間ボタン列のみ縦中央揃え（stRadioを含む列に限定） */
+    [data-testid="column"]:last-child:has(.stRadio) > div:first-child {
         display: flex !important;
         flex-direction: row !important;
         align-items: center !important;
@@ -681,6 +681,12 @@ st.markdown("""
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #c0ccda; }
 
+    /* ===== チャート横並びのカラムを上揃えに ===== */
+    /* 6列KPIカード行以外はデフォルトで上揃えにする */
+    [data-testid="stHorizontalBlock"]:not(:has(> [data-testid="column"]:nth-child(6))) {
+        align-items: flex-start !important;
+    }
+
     /* ===== KPIカード行の高さを揃える（6列ブロックのみ対象） ===== */
     /* :has() で6列のKPIカード行だけを狙い打ち。ヘッダー行(2列)には影響しない */
     [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(6)) {
@@ -717,9 +723,10 @@ st.markdown("""
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
-        padding: 0.85rem 0.85rem 0.25rem;
+        padding: 0.85rem 0.85rem 0.65rem;
         box-shadow: var(--shadow-sm);
         margin-bottom: 0 !important;
+        overflow: hidden !important;
     }
     /* Plotly チャート下の余分な余白を除去 */
     .element-container:has([data-testid="stPlotlyChart"]) {

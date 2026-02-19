@@ -16,12 +16,12 @@ CREATE WAREHOUSE IF NOT EXISTS CLAUDE_USAGE_WH
 CREATE DATABASE IF NOT EXISTS CLAUDE_USAGE_DB
     COMMENT = 'Claude Code 利用状況トラッキング';
 
-CREATE SCHEMA IF NOT EXISTS CLAUDE_USAGE_DB.USAGE_TRACKING
-    COMMENT = 'Claude Code イベントログ & 集計テーブル';
+CREATE SCHEMA IF NOT EXISTS CLAUDE_USAGE_DB.LAYER3
+    COMMENT = 'Claude Code イベントログ & 集計テーブル（加工済みレイヤー）';
 
 USE WAREHOUSE CLAUDE_USAGE_WH;
 USE DATABASE  CLAUDE_USAGE_DB;
-USE SCHEMA    USAGE_TRACKING;
+USE SCHEMA    LAYER3;
 
 -- ============================================================================
 -- 1. メインイベントログテーブル
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS USAGE_EVENTS (
 
     -- イベント基本情報
     EVENT_TYPE       VARCHAR(50)   NOT NULL,           -- SessionStart / PostToolUse / UserPromptSubmit / Stop / Notification / etc.
-    EVENT_TIMESTAMP  TIMESTAMP_NTZ NOT NULL,           -- イベント発生時刻（UTC）
+    EVENT_TIMESTAMP  TIMESTAMP_NTZ NOT NULL,           -- イベント発生時刻（JST: Asia/Tokyo）
     RECEIVED_AT      TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),  -- 取り込み時刻
 
     -- ユーザー・チーム・セッション
@@ -186,7 +186,7 @@ GROUP BY TEAM_ID, TOOL_NAME, DATE_TRUNC('DAY', EVENT_TIMESTAMP);
 -- ============================================================================
 
 -- データ取り込み用（send_event.py が生成する JSONL ファイルのアップロード先）
-CREATE OR REPLACE STAGE CLAUDE_USAGE_INTERNAL_STAGE
+CREATE OR REPLACE STAGE CLAUDE_USAGE_DB.LAYER3.CLAUDE_USAGE_INTERNAL_STAGE
     FILE_FORMAT = (
         TYPE              = 'JSON'
         STRIP_OUTER_ARRAY = FALSE

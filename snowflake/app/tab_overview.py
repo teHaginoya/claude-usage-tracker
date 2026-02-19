@@ -7,18 +7,17 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, calc_change, kpi_card, section
 from queries import get_kpi_overview, get_timeline_data, get_heatmap_data
-from demo_data import demo_kpi_overview, demo_timeline, demo_heatmap
 
 
 def render_overview(team_id: str, days: int):
     # ── KPI データ取得 ────────────────────────────────────────────
     kpi_raw = get_kpi_overview(team_id, days)
-    if kpi_raw.empty:
-        kpi = demo_kpi_overview()
-    else:
+    if not kpi_raw.empty:
         r = kpi_raw.iloc[0]
         kpi = {k.upper(): (int(v) if str(v) not in ("nan", "None") else 0)
                for k, v in r.items()}
+    else:
+        kpi = {}
 
     active = int(kpi.get("ACTIVE_USERS", 0))
     total  = int(kpi.get("TOTAL_USERS",  1)) or 1
@@ -79,73 +78,94 @@ def render_overview(team_id: str, days: int):
     with cl:
         tl = get_timeline_data(team_id, days)
         if tl.empty:
-            tl = demo_timeline(days)
-        tl.columns = [c.upper() for c in tl.columns]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=tl["EVENT_DATE"], y=tl["MESSAGES"],
-            name="メッセージ", line=dict(color="#f59e0b", width=2),
-            fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
-        ))
-        fig.add_trace(go.Scatter(
-            x=tl["EVENT_DATE"], y=tl["SESSIONS"],
-            name="セッション", line=dict(color="#0d9488", width=1.5, dash="dot"),
-        ))
-        if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
-            max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
-            fig.add_trace(go.Bar(
-                x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
-                name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
-                yaxis="y2",
+            st.info("期間内の利用推移データがありません")
+        else:
+            tl.columns = [c.upper() for c in tl.columns]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=tl["EVENT_DATE"], y=tl["MESSAGES"],
+                name="メッセージ", line=dict(color="#f59e0b", width=2),
+                fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
             ))
+            fig.add_trace(go.Scatter(
+                x=tl["EVENT_DATE"], y=tl["SESSIONS"],
+                name="セッション", line=dict(color="#0d9488", width=1.5, dash="dot"),
+            ))
+            if "LIMIT_HITS" in tl.columns and tl["LIMIT_HITS"].sum() > 0:
+                max_lim = max(int(tl["LIMIT_HITS"].max()), 1)
+                fig.add_trace(go.Bar(
+                    x=tl["EVENT_DATE"], y=tl["LIMIT_HITS"],
+                    name="制限ヒット", marker_color="rgba(225,29,72,0.3)",
+                    yaxis="y2",
+                ))
+                fig.update_layout(
+                    yaxis2=dict(
+                        overlaying="y", side="right", showgrid=False,
+                        range=[0, max_lim * 8],
+                        showticklabels=False,
+                    ),
+                )
             fig.update_layout(
-                yaxis2=dict(
-                    overlaying="y", side="right", showgrid=False,
-                    range=[0, max_lim * 8],
-                    showticklabels=False,
-                ),
+                title_text="日次利用推移",
+                legend=dict(orientation="h", x=0.95, y=1.12, xanchor="right", yanchor="top",
+                            bgcolor="rgba(255,255,255,0.85)"),
             )
-        fig.update_layout(title_text="日次利用推移", legend=dict(orientation="h", y=1.12, x=0))
-        fig = apply_plotly(fig, 280)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+            fig = apply_plotly(fig, 340)
+            fig.update_layout(margin=dict(t=40, r=16))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with cr:
         hm = get_heatmap_data(team_id, days)
         if hm.empty:
-            hm = demo_heatmap()
-        hm.columns = [c.upper() for c in hm.columns]
-
-        dow_labels = ["日", "月", "火", "水", "木", "金", "土"]
-        pivot = hm.pivot_table(
-            index="DOW", columns="HOUR_OF_DAY",
-            values="EVENT_COUNT", aggfunc="sum", fill_value=0,
-        )
-        pivot.index = [dow_labels[i] if i < 7 else str(i) for i in pivot.index]
-
-        fig2 = go.Figure(go.Heatmap(
-            z=pivot.values,
-            x=[f"{h:02d}h" for h in pivot.columns],
-            y=pivot.index.tolist(),
-            colorscale=[[0, "#e8edf5"], [0.3, "#bae6fd"], [0.65, "#0d9488"], [1, "#f59e0b"]],
-            showscale=False,
-            hoverongaps=False,
-            hovertemplate="曜日: %{y}<br>時刻: %{x}<br>件数: %{z}<extra></extra>",
-        ))
-        fig2.update_layout(
-            title_text="時間帯 × 曜日ヒートマップ",
-            xaxis=dict(side="bottom"),
-        )
-        fig2.update_xaxes(
-            tickvals=[f"{h:02d}h" for h in range(0, 24, 4)],
-            ticktext=[f"{h:02d}h" for h in range(0, 24, 4)],
-        )
-        fig2 = apply_plotly(fig2, 280)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.info("時間帯データがありません")
+        else:
+            hm.columns = [c.upper() for c in hm.columns]
+            # DOW: 0=日, 1=月, 2=火, ... 6=土 → 月〜日順に並べる
+            dow_map = {1: "月", 2: "火", 3: "水", 4: "木", 5: "金", 6: "土", 0: "日"}
+            dow_order = [1, 2, 3, 4, 5, 6, 0]  # 月〜日
+            dow_labels_ordered = [dow_map[d] for d in dow_order]
+            pivot = hm.pivot_table(
+                index="DOW", columns="HOUR_OF_DAY",
+                values="EVENT_COUNT", aggfunc="sum", fill_value=0,
+            )
+            # 全24時間・全7曜日を保証
+            pivot = pivot.reindex(index=dow_order, columns=range(24), fill_value=0)
+            pivot.index = dow_labels_ordered
+            hour_labels = [str(h) for h in range(24)]
+            fig2 = go.Figure(go.Heatmap(
+                z=pivot.values,
+                x=hour_labels,
+                y=pivot.index.tolist(),
+                colorscale=[[0, "#e8edf5"], [0.3, "#bae6fd"], [0.65, "#0d9488"], [1, "#f59e0b"]],
+                showscale=True,
+                colorbar=dict(
+                    title=dict(text="件数", side="right", font=dict(size=9)),
+                    thickness=8, len=0.7,
+                    tickfont=dict(size=8),
+                    xpad=4,
+                ),
+                hoverongaps=False,
+                hovertemplate="曜日: %{y}<br>時刻: %{x}時<br>件数: %{z}<extra></extra>",
+            ))
+            fig2.update_layout(
+                title_text="時間帯 × 曜日ヒートマップ",
+                xaxis=dict(side="bottom"),
+            )
+            fig2 = apply_plotly(fig2, 340)
+            fig2.update_layout(margin=dict(b=48, r=64))
+            fig2.update_xaxes(
+                tickmode="array",
+                tickvals=list(range(24)),
+                ticktext=[str(h) for h in range(24)],
+                dtick=1,
+            )
+            fig2.update_yaxes(
+                tickmode="array",
+                tickvals=dow_labels_ordered,
+                ticktext=dow_labels_ordered,
+                autorange="reversed",
+            )
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     # ── AI Insights ───────────────────────────────────────────────
     section("AI Insights", "自動生成インサイト")

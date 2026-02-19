@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, section
 from queries import get_monthly_active, get_feature_adoption
-from demo_data import demo_monthly, demo_feature_adoption
 
 
 def render_adoption(team_id: str, days: int):
@@ -16,39 +15,61 @@ def render_adoption(team_id: str, days: int):
     # ── 月次アクティブユーザー ────────────────────────────────────
     monthly = get_monthly_active(team_id)
     if monthly.empty:
-        monthly = demo_monthly()
-    monthly.columns = [c.upper() for c in monthly.columns]
+        st.info("月次アクティブユーザーデータがありません")
+    else:
+        monthly.columns = [c.upper() for c in monthly.columns]
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=monthly["MONTH"], y=monthly["ACTIVE_USERS"],
-        name="月次アクティブユーザー",
-        line=dict(color="#f59e0b", width=2.5),
-        fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
-        marker=dict(size=6, color="#f59e0b"),
-    ))
-    fig.add_trace(go.Bar(
-        x=monthly["MONTH"], y=monthly["SESSIONS"],
-        name="セッション数",
-        marker_color="rgba(13,148,136,0.25)",
-        yaxis="y2",
-    ))
-    fig.update_layout(
-        title_text="月次アクティブユーザー推移",
-        yaxis2=dict(overlaying="y", side="right", showgrid=False,
-                    tickfont=dict(color="#0d9488", size=9)),
-        legend=dict(orientation="h", y=1.1, x=0),
-    )
-    fig = apply_plotly(fig, 280)
-    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-    st.markdown("</div>", unsafe_allow_html=True)
+        max_val = max(
+            int(monthly["ACTIVE_USERS"].max()) if not monthly["ACTIVE_USERS"].empty else 0,
+            int(monthly["SESSIONS"].max())      if not monthly["SESSIONS"].empty      else 0,
+        ) + 1
+        max_val = max(max_val, 2)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=monthly["MONTH"], y=monthly["ACTIVE_USERS"],
+            name="月次アクティブユーザー",
+            line=dict(color="#f59e0b", width=2.5),
+            fill="tozeroy", fillcolor="rgba(245,158,11,0.15)",
+            marker=dict(size=6, color="#f59e0b"),
+            hovertemplate="%{x|%Y年%m月}<br>アクティブユーザー: %{y:d}名<extra></extra>",
+        ))
+        fig.add_trace(go.Bar(
+            x=monthly["MONTH"], y=monthly["SESSIONS"],
+            name="セッション数",
+            marker_color="rgba(13,148,136,0.25)",
+            hovertemplate="%{x|%Y年%m月}<br>セッション数: %{y:d}件<extra></extra>",
+        ))
+        fig.update_layout(
+            title_text="月次アクティブユーザー推移",
+            xaxis=dict(
+                type="date",
+                tickformat="%Y/%m",
+                dtick="M1",
+                tickangle=0,
+            ),
+            yaxis=dict(
+                dtick=1,
+                tickformat="d",
+                range=[0, max_val],
+            ),
+            legend=dict(
+                orientation="h",
+                x=0.99, y=1.12,
+                xanchor="right", yanchor="top",
+                bgcolor="rgba(255,255,255,0.85)",
+            ),
+        )
+        fig = apply_plotly(fig, 360)
+        fig.update_layout(margin=dict(t=40, b=40, r=20))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ── 機能普及率 ───────────────────────────────────────────────
     section("機能普及率")
     fa_df = get_feature_adoption(team_id, days)
     if fa_df.empty:
-        fa_df = demo_feature_adoption()
+        st.info("機能普及率データがありません")
+        return
     fa_df.columns = [c.upper() for c in fa_df.columns]
     fa = fa_df.iloc[0]
 
@@ -60,7 +81,7 @@ def render_adoption(team_id: str, days: int):
         ("Command",  int(fa.get("COMMAND_USERS",  0)), "#3b82f6", "var(--accent-blue)"),
     ]
 
-    ca, cb = st.columns([2, 3])
+    ca, cb = st.columns([2, 3], vertical_alignment="top")
 
     with ca:
         bars_html = ""
@@ -100,9 +121,7 @@ def render_adoption(team_id: str, days: int):
             yaxis={"categoryorder": "total ascending"},
         )
         fig2 = apply_plotly(fig2, 240)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
         st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # ── 未使用者サマリー ─────────────────────────────────────────
     section("未使用者サマリー")

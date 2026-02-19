@@ -16,3 +16,6 @@ Thumbs.db
 # Credentials / secrets
 *.csv
 *accessKeys*
+
+# Screenshots (dev reference only)
+snowflake/docs/スクリーンショット*

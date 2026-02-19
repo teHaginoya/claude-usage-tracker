@@ -8,7 +8,6 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, kpi_card, section
 from queries import get_session_kpi, get_stop_reason_data, get_limit_hit_by_hour
-from demo_data import demo_session_kpi, demo_stop_reason, demo_limit_by_hour
 
 
 def render_sessions(team_id: str, days: int):
@@ -17,7 +16,8 @@ def render_sessions(team_id: str, days: int):
     # ── KPI ──────────────────────────────────────────────────────
     kpi_df = get_session_kpi(team_id, days)
     if kpi_df.empty:
-        kpi_df = demo_session_kpi()
+        st.info("期間内のセッションデータがありません")
+        return
     kpi_df.columns = [c.upper() for c in kpi_df.columns]
     kpi = kpi_df.iloc[0]
 
@@ -56,74 +56,81 @@ def render_sessions(team_id: str, days: int):
                              extra_html=extra), unsafe_allow_html=True)
 
     # ── チャート ──────────────────────────────────────────────────
-    c1, c2 = st.columns(2)
+    st.markdown('<div style="margin-top:1.25rem"></div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2, vertical_alignment="top")
 
     with c1:
         stop_df = get_stop_reason_data(team_id, days)
         if stop_df.empty:
-            stop_df = demo_stop_reason()
-        stop_df.columns = [c.upper() for c in stop_df.columns]
+            st.info("停止理由データがありません")
+        else:
+            stop_df.columns = [c.upper() for c in stop_df.columns]
 
-        label_map = {"normal": "正常終了", "usage_limit": "利用制限", "unknown": "不明"}
-        color_map = {"正常終了": "#16a34a", "利用制限": "#e11d48", "不明": "#94a3b8"}
-        labels = [label_map.get(str(x), str(x)) for x in stop_df["STOP_REASON"]]
-        colors = [color_map.get(l, "#8b5cf6") for l in labels]
+            label_map = {"normal": "正常終了", "usage_limit": "利用制限", "unknown": "不明"}
+            color_map = {"正常終了": "#16a34a", "利用制限": "#e11d48", "不明": "#94a3b8"}
+            labels = [label_map.get(str(x), str(x)) for x in stop_df["STOP_REASON"]]
+            colors = [color_map.get(l, "#8b5cf6") for l in labels]
 
-        fig = go.Figure(go.Pie(
-            labels=labels, values=stop_df["SESSION_COUNT"],
-            hole=0.62,
-            marker=dict(colors=colors, line=dict(color="#ffffff", width=3)),
-            textinfo="label+percent",
-            textfont=dict(size=11, color="#0f172a"),
-        ))
-        fig.update_layout(
-            title_text="停止理由の内訳",
-            annotations=[dict(
-                text=f"{total_sess}<br><span style='font-size:10px'>Sessions</span>",
-                x=0.5, y=0.5, font_size=15, showarrow=False,
-                font=dict(color="#0f172a"),
-            )],
-            showlegend=True,
-            legend=dict(orientation="h", y=-0.1, x=0.1),
-        )
-        fig = apply_plotly(fig, 300)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+            fig = go.Figure(go.Pie(
+                labels=labels, values=stop_df["SESSION_COUNT"],
+                hole=0.62,
+                marker=dict(colors=colors, line=dict(color="#ffffff", width=3)),
+                textinfo="label+percent",
+                textfont=dict(size=11, color="#0f172a"),
+            ))
+            fig.update_layout(
+                title_text="停止理由の内訳",
+                annotations=[dict(
+                    text=f"{total_sess}<br><span style='font-size:10px'>Sessions</span>",
+                    x=0.5, y=0.5, font_size=15, showarrow=False,
+                    font=dict(color="#0f172a"),
+                )],
+                showlegend=True,
+                legend=dict(orientation="h", y=-0.10, x=0, xanchor="left"),
+            )
+            fig = apply_plotly(fig, 318)
+            fig.update_layout(margin=dict(b=72))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     with c2:
         lim_hr = get_limit_hit_by_hour(team_id, days)
         if lim_hr.empty:
-            lim_hr = demo_limit_by_hour()
-        lim_hr.columns = [c.upper() for c in lim_hr.columns]
+            st.markdown(
+                '<div style="display:flex;align-items:center;justify-content:center;'
+                'min-height:318px;background:var(--bg-card);border:1px solid var(--border);'
+                'border-radius:var(--radius-lg);color:var(--accent-blue);'
+                'font-size:0.875rem;box-shadow:var(--shadow-sm);">'
+                '制限ヒットデータがありません</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            lim_hr.columns = [c.upper() for c in lim_hr.columns]
 
-        # 0-23 全時間を保証
-        all_hours = pd.DataFrame({"HOUR_OF_DAY": list(range(24))})
-        lim_hr = all_hours.merge(lim_hr, on="HOUR_OF_DAY", how="left").fillna(0)
+            # 0-23 全時間を保証
+            all_hours = pd.DataFrame({"HOUR_OF_DAY": list(range(24))})
+            lim_hr = all_hours.merge(lim_hr, on="HOUR_OF_DAY", how="left").fillna(0)
 
-        # ヒットあり/なしで色分け
-        bar_colors = [
-            "#e11d48" if v > 0 else "#e2e8f0"
-            for v in lim_hr["LIMIT_HITS"]
-        ]
-        fig2 = go.Figure(go.Bar(
-            x=lim_hr["HOUR_OF_DAY"],
-            y=lim_hr["LIMIT_HITS"],
-            marker=dict(color=bar_colors, line=dict(width=0)),
-            hovertemplate="%{x}時: %{y}件<extra></extra>",
-        ))
-        fig2.update_layout(
-            title_text="制限ヒット 時間帯別",
-            xaxis=dict(
-                tickmode="array",
-                tickvals=list(range(0, 24, 3)),
-                ticktext=[f"{h:02d}h" for h in range(0, 24, 3)],
-                title="",
-            ),
-            yaxis=dict(title="", dtick=1),
-            bargap=0.2,
-        )
-        fig2 = apply_plotly(fig2, 300)
-        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
-        st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
-        st.markdown("</div>", unsafe_allow_html=True)
+            # ヒットあり/なしで色分け
+            bar_colors = [
+                "#e11d48" if v > 0 else "#e2e8f0"
+                for v in lim_hr["LIMIT_HITS"]
+            ]
+            fig2 = go.Figure(go.Bar(
+                x=lim_hr["HOUR_OF_DAY"],
+                y=lim_hr["LIMIT_HITS"],
+                marker=dict(color=bar_colors, line=dict(width=0)),
+                hovertemplate="%{x}時: %{y}件<extra></extra>",
+            ))
+            fig2.update_layout(
+                title_text="制限ヒット 時間帯別",
+                xaxis=dict(
+                    tickmode="array",
+                    tickvals=list(range(0, 24, 3)),
+                    ticktext=[f"{h:02d}h" for h in range(0, 24, 3)],
+                    title="",
+                ),
+                yaxis=dict(title="", dtick=1),
+                bargap=0.2,
+            )
+            fig2 = apply_plotly(fig2, 240)
+            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})

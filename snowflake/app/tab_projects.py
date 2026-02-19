@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 
 from helpers import apply_plotly, section
 from queries import get_project_ranking
-from demo_data import demo_projects
 
 
 def render_projects(team_id: str, days: int):
@@ -15,7 +14,8 @@ def render_projects(team_id: str, days: int):
 
     proj_df = get_project_ranking(team_id, days)
     if proj_df.empty:
-        proj_df = demo_projects()
+        st.info("期間内のプロジェクトデータがありません")
+        return
     proj_df.columns = [c.upper() for c in proj_df.columns]
     col_name = "PROJECT_NAME" if "PROJECT_NAME" in proj_df.columns else proj_df.columns[0]
 
