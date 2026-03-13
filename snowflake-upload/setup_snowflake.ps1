@@ -102,12 +102,10 @@ function Invoke-Setup {
     # 環境変数の設定
     Write-Host ""
     Write-Host "Snowflake の接続情報を設定します。"
-    Write-Host "管理者から以下の情報を受け取ってください:"
-    Write-Host "  - Snowflake アカウント識別子 (例: abc12345.ap-northeast-1.aws)"
-    Write-Host "  - Snowflake ユーザー名"
     Write-Host ""
 
-    # SNOWFLAKE_ACCOUNT
+    # SNOWFLAKE_ACCOUNT (チーム共通)
+    $defaultAccount = "MYLMWWX-DPF002"
     $current = [Environment]::GetEnvironmentVariable("SNOWFLAKE_ACCOUNT", "User")
     if ($current) {
         Write-Info "現在の設定: SNOWFLAKE_ACCOUNT = $current"
@@ -115,12 +113,11 @@ function Invoke-Setup {
         if ($change -eq "y") { $current = $null }
     }
     if (-not $current) {
-        $val = Read-Host "Snowflake アカウント識別子"
-        if ($val) {
-            [System.Environment]::SetEnvironmentVariable("SNOWFLAKE_ACCOUNT", $val, "User")
-            $env:SNOWFLAKE_ACCOUNT = $val
-            Write-Success "SNOWFLAKE_ACCOUNT = $val"
-        }
+        $val = Read-Host "Snowflake アカウント識別子 (Enter でデフォルト: $defaultAccount)"
+        if (-not $val) { $val = $defaultAccount }
+        [System.Environment]::SetEnvironmentVariable("SNOWFLAKE_ACCOUNT", $val, "User")
+        $env:SNOWFLAKE_ACCOUNT = $val
+        Write-Success "SNOWFLAKE_ACCOUNT = $val"
     }
 
     # SNOWFLAKE_USER
@@ -139,17 +136,12 @@ function Invoke-Setup {
         }
     }
 
-    # USAGE_TRACKER_USER_ID
+    # USAGE_TRACKER_USER_ID は接続テスト後に Snowflake の CURRENT_USER() から自動設定
     $current = [Environment]::GetEnvironmentVariable("USAGE_TRACKER_USER_ID", "User")
-    if (-not $current) {
-        $val = Read-Host "あなたのユーザー ID (例: yamada.taro)"
-        if ($val) {
-            [System.Environment]::SetEnvironmentVariable("USAGE_TRACKER_USER_ID", $val, "User")
-            $env:USAGE_TRACKER_USER_ID = $val
-            Write-Success "USAGE_TRACKER_USER_ID = $val"
-        }
-    } else {
+    if ($current) {
         Write-Success "USAGE_TRACKER_USER_ID = $current (設定済み)"
+    } else {
+        Write-Info "USAGE_TRACKER_USER_ID は接続テスト成功後に自動設定されます"
     }
 
     # オプション: ウェアハウス・DB・スキーマ (デフォルトあり)

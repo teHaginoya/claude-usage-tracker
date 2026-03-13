@@ -22,9 +22,7 @@ Step 6: 自動アップロードの設定
 
 - Windows PC
 - Claude Code がインストール済み
-- 管理者から受け取るもの:
-  - Snowflake アカウント識別子 (例: `abc12345.ap-northeast-1.aws`)
-  - Snowflake ユーザー名
+- 自分の Snowflake ユーザー名（LOGIN_NAME）を把握していること
 
 ---
 
@@ -180,25 +178,29 @@ Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\snowflake-upload\setup_
 対話形式で以下を入力します:
 
 ```text
-Snowflake アカウント識別子: （管理者から受け取った値、例: abc12345.ap-northeast-1.aws）
-Snowflake ユーザー名: （管理者から受け取った値）
-あなたのユーザー ID: （自分の名前を入力、例: yamada.taro）
+Snowflake アカウント識別子: MYLMWWX-DPF002（全員共通、そのままEnterでOK）
+Snowflake ユーザー名: （自分の LOGIN_NAME、例: IT.YAMADA.TARO@IFTC.CO.JP）
 ```
 
 セットアップ中に RSA キーペアが自動生成され、公開鍵が表示されます。
 
-### 4-4. 公開鍵を管理者に渡す
+> **Note**: ユーザーIDは Snowflake の `CURRENT_USER()` から自動取得されるため、手動入力は不要です。
+> 接続テスト成功後に `USAGE_TRACKER_USER_ID` が自動設定されます。
 
-表示された公開鍵（1行の長い文字列）をコピーして管理者に送ってください。
-管理者が Snowflake 側で以下の SQL を実行してキーを登録します:
+### 4-4. 公開鍵を Snowflake に登録する
+
+セットアップ中に表示された公開鍵（1行の長い文字列）を Snowflake に登録します。
+Snowflake の Web UI（Snowsight）にログインし、ワークシートで以下の SQL を実行してください:
 
 ```sql
-ALTER USER <ユーザー名> SET RSA_PUBLIC_KEY='ここに公開鍵';
+ALTER USER <自分のユーザー名> SET RSA_PUBLIC_KEY='ここに表示された公開鍵を貼り付け';
 ```
+
+> **Tip**: 公開鍵は `~/.snowflake/rsa_key.pub` にも保存されています。後から確認できます。
 
 ### 4-5. 接続テスト
 
-管理者がキー登録を完了したら、接続テストを実行:
+公開鍵の登録が完了したら、接続テストを実行:
 
 ```powershell
 cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
@@ -206,8 +208,6 @@ cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
 ```
 
 「[OK] 接続成功」「[OK] COPY INTO 完了」と表示されれば成功です。
-
-> **注意**: 管理者がキーを登録する前に実行すると接続エラーになります。
 
 ---
 
@@ -318,7 +318,7 @@ Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\snowflake-upload\setup_
 
 → 以下を確認してください:
 
-1. 管理者が公開鍵を登録済みか
+1. Snowsight で `ALTER USER SET RSA_PUBLIC_KEY` を実行済みか
 2. `SNOWFLAKE_ACCOUNT` / `SNOWFLAKE_USER` が正しく設定されているか
 3. 秘密鍵ファイルが `~/.snowflake/rsa_key.p8` に存在するか
 

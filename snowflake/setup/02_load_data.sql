@@ -1,166 +1,90 @@
 -- ============================================================================
 -- Claude Code Usage Tracker - データ取り込み SQL
+--
+-- パイプライン: Stage → LAYER1.RAW_EVENTS → LAYER2.EVENTS → LAYER3.*_SUMMARY
 -- 前提: 01_create_tables.sql 実行済み
 -- ============================================================================
 
 USE WAREHOUSE CLAUDE_USAGE_WH;
-USE DATABASE  CLAUDE_USAGE_DB;
-USE SCHEMA    LAYER3;
 
 -- ============================================================================
--- パターン A: ローカル JSONL ファイルを内部ステージ経由で取り込む（推奨）
+-- STEP 1: Stage → LAYER1.RAW_EVENTS
 --
--- send_event.py が生成するファイル:
---   ~/.claude/usage-tracker-logs/events-YYYY-MM-DD.jsonl
+-- JSONL の各行を VARIANT としてそのまま保持。
+-- ファイル名をメタデータとして記録。
 --
 -- 【手順】
---   1. SnowSQL または Snowflake CLI でアップロード:
+--   1. PUT でローカルファイルをステージにアップロード:
 --      PUT file://~/.claude/usage-tracker-logs/events-*.jsonl
---          @CLAUDE_USAGE_DB.LAYER3.CLAUDE_USAGE_INTERNAL_STAGE
+--          @CLAUDE_USAGE_DB.LAYER1.CLAUDE_USAGE_INTERNAL_STAGE
 --          AUTO_COMPRESS=TRUE;
 --   2. 以下の COPY INTO を実行
 -- ============================================================================
 
-COPY INTO USAGE_EVENTS (
-    EVENT_TYPE,
-    EVENT_TIMESTAMP,
-    USER_ID,
-    TEAM_ID,
-    SESSION_ID,
-    PROJECT_NAME,
-    TOOL_NAME,
-    TOOL_SUCCESS,
-    OUTPUT_LENGTH,
-    ERROR_MESSAGE,
-    PROMPT_LENGTH,
-    IS_SKILL,
-    IS_SUBAGENT,
-    IS_MCP,
-    IS_COMMAND,
-    IS_FILE_OPERATION,
-    IS_USAGE_LIMIT,
-    STOP_REASON,
-    METADATA
-)
+COPY INTO CLAUDE_USAGE_DB.LAYER1.RAW_EVENTS (RAW_DATA, SOURCE_FILE)
 FROM (
     SELECT
-        -- 基本フィールド
-        $1:event_type::VARCHAR,
-        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo', TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR)),  -- UTC → JST
-        $1:user_id::VARCHAR,
-        COALESCE($1:team_id::VARCHAR, 'default-team'),
-        $1:session_id::VARCHAR,
-        $1:project::VARCHAR,                                    -- send_event.py の "project" キー
-
-        -- ツール情報
-        $1:tool_name::VARCHAR,
-        $1:success::BOOLEAN,
-        $1:output_length::INTEGER,
-        $1:error::VARCHAR,
-        $1:prompt_length::INTEGER,
-
-        -- カテゴリフラグ（send_event.py の categories 配下）
-        COALESCE($1:categories:skill::BOOLEAN,          FALSE),
-        COALESCE($1:categories:subagent::BOOLEAN,       FALSE),
-        COALESCE($1:categories:mcp::BOOLEAN,            FALSE),
-        COALESCE($1:categories:command::BOOLEAN,        FALSE),
-        COALESCE($1:categories:file_operation::BOOLEAN, FALSE),
-
-        -- 利用上限・停止理由（root フィールド）
-        COALESCE($1:is_usage_limit::BOOLEAN,            FALSE), -- Notification イベントで TRUE
-        $1:stop_reason::VARCHAR,                                -- Stop イベント: normal/usage_limit/unknown
-
-        -- 全ペイロードを VARIANT として保持
-        $1::VARIANT
-
-    FROM @CLAUDE_USAGE_INTERNAL_STAGE
+        $1,
+        METADATA$FILENAME
+    FROM @CLAUDE_USAGE_DB.LAYER1.CLAUDE_USAGE_INTERNAL_STAGE
 )
 ON_ERROR = 'CONTINUE';
 
--- ============================================================================
--- パターン B: S3 外部ステージ経由（サーバー → S3 → Snowflake の場合）
--- ============================================================================
-
-/*
--- S3 外部ステージの作成（認証情報は環境に合わせて設定）
-CREATE OR REPLACE STAGE CLAUDE_USAGE_S3_STAGE
-    URL         = 's3://your-bucket-name/claude-usage-logs/'
-    CREDENTIALS = (
-        AWS_KEY_ID     = 'YOUR_AWS_ACCESS_KEY'
-        AWS_SECRET_KEY = 'YOUR_AWS_SECRET_KEY'
-    )
-    FILE_FORMAT = (
-        TYPE              = 'JSON'
-        STRIP_OUTER_ARRAY = FALSE
-    );
-
--- S3 ステージからのロード（カラムマッピングは パターン A と同一）
-COPY INTO USAGE_EVENTS (
-    EVENT_TYPE, EVENT_TIMESTAMP, USER_ID, TEAM_ID, SESSION_ID,
-    PROJECT_NAME, TOOL_NAME, TOOL_SUCCESS, OUTPUT_LENGTH, ERROR_MESSAGE,
-    PROMPT_LENGTH, IS_SKILL, IS_SUBAGENT, IS_MCP, IS_COMMAND, IS_FILE_OPERATION,
-    IS_USAGE_LIMIT, STOP_REASON, METADATA
-)
-FROM (
-    SELECT
-        $1:event_type::VARCHAR,
-        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo', TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR)),  -- UTC → JST
-        $1:user_id::VARCHAR,
-        COALESCE($1:team_id::VARCHAR, 'default-team'),
-        $1:session_id::VARCHAR,
-        $1:project::VARCHAR,
-        $1:tool_name::VARCHAR,
-        $1:success::BOOLEAN,
-        $1:output_length::INTEGER,
-        $1:error::VARCHAR,
-        $1:prompt_length::INTEGER,
-        COALESCE($1:categories:skill::BOOLEAN,          FALSE),
-        COALESCE($1:categories:subagent::BOOLEAN,       FALSE),
-        COALESCE($1:categories:mcp::BOOLEAN,            FALSE),
-        COALESCE($1:categories:command::BOOLEAN,        FALSE),
-        COALESCE($1:categories:file_operation::BOOLEAN, FALSE),
-        COALESCE($1:is_usage_limit::BOOLEAN,            FALSE),
-        $1:stop_reason::VARCHAR,
-        $1::VARIANT
-    FROM @CLAUDE_USAGE_S3_STAGE
-)
-ON_ERROR = 'CONTINUE';
-*/
 
 -- ============================================================================
--- パターン C: TROCCO 経由（S3 → Snowflake の ETL ツール）
--- ============================================================================
--- TROCCO の設定：
--- ソース      : S3 (JSONL)
--- デスティネーション : Snowflake (CLAUDE_USAGE_DB.LAYER3.USAGE_EVENTS)
+-- STEP 2: LAYER1.RAW_EVENTS → LAYER2.EVENTS
 --
--- カラムマッピング:
---   event_type                    → EVENT_TYPE
---   timestamp                     → EVENT_TIMESTAMP
---   user_id                       → USER_ID
---   team_id                       → TEAM_ID
---   session_id                    → SESSION_ID
---   project                       → PROJECT_NAME
---   tool_name                     → TOOL_NAME
---   success                       → TOOL_SUCCESS
---   output_length                 → OUTPUT_LENGTH
---   error                         → ERROR_MESSAGE
---   prompt_length                 → PROMPT_LENGTH
---   categories.skill              → IS_SKILL
---   categories.subagent           → IS_SUBAGENT
---   categories.mcp                → IS_MCP
---   categories.command            → IS_COMMAND
---   categories.file_operation     → IS_FILE_OPERATION
---   is_usage_limit                → IS_USAGE_LIMIT
---   stop_reason                   → STOP_REASON
---   (全体を VARIANT に変換)       → METADATA
-
--- ============================================================================
--- サマリーテーブルの更新（日次バッチ or 手動実行）
+-- カラム展開・型変換・重複排除して蓄積。
+-- EVENT_HASH (SHA2) で MERGE するため、同一データの重複ロードを防止。
 -- ============================================================================
 
--- 日別サマリー（MERGE で重複なし更新）
-MERGE INTO DAILY_SUMMARY AS tgt
+MERGE INTO CLAUDE_USAGE_DB.LAYER2.EVENTS AS tgt
+USING (
+    SELECT
+        SHA2(RAW_DATA::VARCHAR)                                       AS EVENT_HASH,
+        RAW_DATA:event_type::VARCHAR                                  AS EVENT_TYPE,
+        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo',
+            TRY_TO_TIMESTAMP_NTZ(RAW_DATA:timestamp::VARCHAR))        AS EVENT_TIMESTAMP,
+        RAW_DATA:user_id::VARCHAR                                     AS USER_ID,
+        COALESCE(RAW_DATA:team_id::VARCHAR, 'default-team')           AS TEAM_ID,
+        RAW_DATA:session_id::VARCHAR                                  AS SESSION_ID,
+        RAW_DATA:project::VARCHAR                                     AS PROJECT_NAME,
+        RAW_DATA:tool_name::VARCHAR                                   AS TOOL_NAME,
+        RAW_DATA:success::BOOLEAN                                     AS TOOL_SUCCESS,
+        RAW_DATA:output_length::INTEGER                               AS OUTPUT_LENGTH,
+        RAW_DATA:error::VARCHAR                                       AS ERROR_MESSAGE,
+        RAW_DATA:prompt_length::INTEGER                               AS PROMPT_LENGTH,
+        COALESCE(RAW_DATA:categories:skill::BOOLEAN,          FALSE)  AS IS_SKILL,
+        COALESCE(RAW_DATA:categories:subagent::BOOLEAN,       FALSE)  AS IS_SUBAGENT,
+        COALESCE(RAW_DATA:categories:mcp::BOOLEAN,            FALSE)  AS IS_MCP,
+        COALESCE(RAW_DATA:categories:command::BOOLEAN,        FALSE)  AS IS_COMMAND,
+        COALESCE(RAW_DATA:categories:file_operation::BOOLEAN, FALSE)  AS IS_FILE_OPERATION,
+        COALESCE(RAW_DATA:is_usage_limit::BOOLEAN,            FALSE)  AS IS_USAGE_LIMIT,
+        RAW_DATA:stop_reason::VARCHAR                                 AS STOP_REASON,
+        RAW_DATA                                                      AS RAW_DATA
+    FROM CLAUDE_USAGE_DB.LAYER1.RAW_EVENTS
+    WHERE RAW_DATA:event_type IS NOT NULL
+) AS src
+ON tgt.EVENT_HASH = src.EVENT_HASH
+WHEN NOT MATCHED THEN INSERT (
+    EVENT_HASH, EVENT_TYPE, EVENT_TIMESTAMP, USER_ID, TEAM_ID,
+    SESSION_ID, PROJECT_NAME, TOOL_NAME, TOOL_SUCCESS, OUTPUT_LENGTH,
+    ERROR_MESSAGE, PROMPT_LENGTH, IS_SKILL, IS_SUBAGENT, IS_MCP,
+    IS_COMMAND, IS_FILE_OPERATION, IS_USAGE_LIMIT, STOP_REASON, RAW_DATA
+) VALUES (
+    src.EVENT_HASH, src.EVENT_TYPE, src.EVENT_TIMESTAMP, src.USER_ID, src.TEAM_ID,
+    src.SESSION_ID, src.PROJECT_NAME, src.TOOL_NAME, src.TOOL_SUCCESS, src.OUTPUT_LENGTH,
+    src.ERROR_MESSAGE, src.PROMPT_LENGTH, src.IS_SKILL, src.IS_SUBAGENT, src.IS_MCP,
+    src.IS_COMMAND, src.IS_FILE_OPERATION, src.IS_USAGE_LIMIT, src.STOP_REASON, src.RAW_DATA
+);
+
+
+-- ============================================================================
+-- STEP 3: LAYER2.EVENTS → LAYER3 サマリーテーブル
+-- ============================================================================
+
+-- 3-1. 日別サマリー
+MERGE INTO CLAUDE_USAGE_DB.LAYER3.DAILY_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE              AS SUMMARY_DATE,
@@ -177,7 +101,7 @@ USING (
         COUNT(DISTINCT USER_ID)                                AS ACTIVE_USERS,
         ROUND(AVG(CASE WHEN TOOL_SUCCESS IS NOT NULL
             THEN CASE WHEN TOOL_SUCCESS THEN 1.0 ELSE 0.0 END END) * 100, 1) AS SUCCESS_RATE
-    FROM USAGE_EVENTS
+    FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), TEAM_ID
 ) AS src
 ON tgt.SUMMARY_DATE = src.SUMMARY_DATE AND tgt.TEAM_ID = src.TEAM_ID
@@ -204,8 +128,8 @@ WHEN NOT MATCHED THEN INSERT (
     src.LIMIT_HIT_COUNT, src.ACTIVE_USERS, src.SUCCESS_RATE
 );
 
--- ユーザー別日次サマリー（MERGE で重複なし更新）
-MERGE INTO USER_SUMMARY AS tgt
+-- 3-2. ユーザー別日次サマリー
+MERGE INTO CLAUDE_USAGE_DB.LAYER3.USER_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE              AS SUMMARY_DATE,
@@ -221,7 +145,7 @@ USING (
         COUNT(CASE WHEN IS_SKILL    = TRUE THEN 1 END)        AS SKILL_COUNT,
         COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END)     AS LIMIT_HIT_COUNT,
         MAX(EVENT_TIMESTAMP)                                   AS LAST_ACTIVE_AT
-    FROM USAGE_EVENTS
+    FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), USER_ID, TEAM_ID
 ) AS src
 ON  tgt.SUMMARY_DATE = src.SUMMARY_DATE
@@ -249,8 +173,8 @@ WHEN NOT MATCHED THEN INSERT (
     src.COMMAND_COUNT, src.SKILL_COUNT, src.LIMIT_HIT_COUNT, src.LAST_ACTIVE_AT
 );
 
--- ツール別日次サマリー（MERGE で重複なし更新）
-MERGE INTO TOOL_SUMMARY AS tgt
+-- 3-3. ツール別日次サマリー
+MERGE INTO CLAUDE_USAGE_DB.LAYER3.TOOL_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE  AS SUMMARY_DATE,
@@ -259,7 +183,7 @@ USING (
         COUNT(*)                                           AS EXECUTION_COUNT,
         COUNT(CASE WHEN TOOL_SUCCESS = TRUE  THEN 1 END)  AS SUCCESS_COUNT,
         COUNT(CASE WHEN TOOL_SUCCESS = FALSE THEN 1 END)  AS FAILURE_COUNT
-    FROM USAGE_EVENTS
+    FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
     WHERE TOOL_NAME IS NOT NULL
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), TEAM_ID, TOOL_NAME
 ) AS src
@@ -281,9 +205,8 @@ WHEN NOT MATCHED THEN INSERT (
 -- ============================================================================
 -- 確認クエリ
 -- ============================================================================
-SELECT 'USAGE_EVENTS'  AS TABLE_NAME, COUNT(*) AS ROW_COUNT FROM USAGE_EVENTS  UNION ALL
-SELECT 'DAILY_SUMMARY',                COUNT(*) FROM DAILY_SUMMARY             UNION ALL
-SELECT 'USER_SUMMARY',                 COUNT(*) FROM USER_SUMMARY              UNION ALL
-SELECT 'TOOL_SUMMARY',                 COUNT(*) FROM TOOL_SUMMARY;
-
-SELECT * FROM USAGE_EVENTS ORDER BY EVENT_TIMESTAMP DESC LIMIT 10;
+SELECT 'LAYER1.RAW_EVENTS'    AS TABLE_NAME, COUNT(*) AS ROW_COUNT FROM CLAUDE_USAGE_DB.LAYER1.RAW_EVENTS  UNION ALL
+SELECT 'LAYER2.EVENTS',                      COUNT(*) FROM CLAUDE_USAGE_DB.LAYER2.EVENTS                  UNION ALL
+SELECT 'LAYER3.DAILY_SUMMARY',               COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.DAILY_SUMMARY           UNION ALL
+SELECT 'LAYER3.USER_SUMMARY',                COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.USER_SUMMARY            UNION ALL
+SELECT 'LAYER3.TOOL_SUMMARY',                COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.TOOL_SUMMARY;

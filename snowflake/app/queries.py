@@ -2,15 +2,16 @@
 # queries.py - Snowflake SQL クエリ関数
 #
 # データソース:
-#   SUMMARY テーブル → 8 クエリ（高速・事前集計済み）
-#   USAGE_EVENTS     → 6 クエリ（時間帯・セッション詳細など粒度が必要なもの）
+#   LAYER3 SUMMARY テーブル → 8 クエリ（高速・事前集計済み）
+#   LAYER2 EVENTS          → 6 クエリ（時間帯・セッション詳細など粒度が必要なもの）
 # =============================================================================
 
 import streamlit as st
 import pandas as pd
 from helpers import get_session
 
-_S = "CLAUDE_USAGE_DB.LAYER3"  # スキーマ短縮
+_L2 = "CLAUDE_USAGE_DB.LAYER2"  # イベント詳細
+_L3 = "CLAUDE_USAGE_DB.LAYER3"  # サマリーテーブル
 
 # =============================================================================
 # Tab1 概要
@@ -27,13 +28,13 @@ def get_kpi_overview(team_id: str, days: int) -> pd.DataFrame:
             SUM(SKILL_COUNT)      AS SKILL_COUNT,
             SUM(MCP_COUNT)        AS MCP_COUNT,
             SUM(LIMIT_HIT_COUNT)  AS LIMIT_HITS
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     ),
     cur_users AS (
         SELECT COUNT(DISTINCT USER_ID) AS ACTIVE_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     ),
@@ -43,21 +44,21 @@ def get_kpi_overview(team_id: str, days: int) -> pd.DataFrame:
             SUM(SESSION_COUNT)  AS SESS_COUNT,
             SUM(SKILL_COUNT)    AS SKILL_COUNT,
             SUM(MCP_COUNT)      AS MCP_COUNT
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
           AND SUMMARY_DATE <  DATEADD('day', -{days},     CURRENT_DATE())
     ),
     prev_users AS (
         SELECT COUNT(DISTINCT USER_ID) AS ACTIVE_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
           AND SUMMARY_DATE <  DATEADD('day', -{days},     CURRENT_DATE())
     ),
     tot AS (
         SELECT COUNT(DISTINCT USER_ID) AS TOTAL_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
     )
     SELECT
@@ -87,7 +88,7 @@ def get_timeline_data(team_id: str, days: int) -> pd.DataFrame:
         TOOL_EXECUTION_COUNT   AS TOOLS,
         SESSION_COUNT          AS SESSIONS,
         LIMIT_HIT_COUNT        AS LIMIT_HITS
-    FROM {_S}.DAILY_SUMMARY
+    FROM {_L3}.DAILY_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND SUMMARY_DATE >= DATEADD('day', -{min(days, 90)}, CURRENT_DATE())
     ORDER BY 1
@@ -106,7 +107,7 @@ def get_heatmap_data(team_id: str, days: int) -> pd.DataFrame:
         DAYOFWEEK(EVENT_TIMESTAMP) AS DOW,
         HOUR(EVENT_TIMESTAMP)      AS HOUR_OF_DAY,
         COUNT(*)                   AS EVENT_COUNT
-    FROM {_S}.USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
     GROUP BY 1, 2
@@ -138,7 +139,7 @@ def get_user_stats(team_id: str, days: int, limit: int = 30) -> pd.DataFrame:
         SUM(TOTAL_EVENTS)              AS TOTAL_COUNT,
         MAX(LAST_ACTIVE_AT)            AS LAST_ACTIVE,
         MIN(SUMMARY_DATE)              AS FIRST_ACTIVE
-    FROM {_S}.USER_SUMMARY
+    FROM {_L3}.USER_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     GROUP BY USER_ID
@@ -161,7 +162,7 @@ def get_user_detail_timeline(team_id: str, user_id: str, days: int) -> pd.DataFr
         MESSAGE_COUNT       AS MESSAGES,
         SESSION_COUNT       AS SESSIONS,
         LIMIT_HIT_COUNT     AS LIMIT_HITS
-    FROM {_S}.USER_SUMMARY
+    FROM {_L3}.USER_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND USER_ID = '{safe_uid}'
       AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
@@ -179,7 +180,7 @@ def get_user_top_tools(team_id: str, user_id: str, days: int) -> pd.DataFrame:
     safe_uid = user_id.replace("'", "''")
     query = f"""
     SELECT TOOL_NAME, COUNT(*) AS CNT
-    FROM {_S}.USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND USER_ID = '{safe_uid}'
       AND TOOL_NAME IS NOT NULL
@@ -209,7 +210,7 @@ def get_tool_stats(team_id: str, days: int, limit: int = 15) -> pd.DataFrame:
             SUM(SUCCESS_COUNT)
             / NULLIF(SUM(EXECUTION_COUNT), 0) * 100, 1
         ) AS SUCCESS_RATE
-    FROM {_S}.TOOL_SUMMARY
+    FROM {_L3}.TOOL_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     GROUP BY TOOL_NAME
@@ -228,7 +229,7 @@ def get_tool_trend(team_id: str, days: int) -> pd.DataFrame:
     query = f"""
     WITH top_tools AS (
         SELECT TOOL_NAME
-        FROM {_S}.TOOL_SUMMARY
+        FROM {_L3}.TOOL_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
         GROUP BY TOOL_NAME
@@ -239,7 +240,7 @@ def get_tool_trend(team_id: str, days: int) -> pd.DataFrame:
         s.SUMMARY_DATE  AS EVENT_DATE,
         s.TOOL_NAME,
         s.EXECUTION_COUNT AS CNT
-    FROM {_S}.TOOL_SUMMARY s
+    FROM {_L3}.TOOL_SUMMARY s
     JOIN top_tools t ON s.TOOL_NAME = t.TOOL_NAME
     WHERE s.TEAM_ID = '{team_id}'
       AND s.SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
@@ -265,7 +266,7 @@ def get_session_kpi(team_id: str, days: int) -> pd.DataFrame:
             MAX(EVENT_TIMESTAMP) AS end_time,
             MAX(CASE WHEN STOP_REASON = 'usage_limit' THEN 1 ELSE 0 END) AS is_limit,
             COALESCE(MAX(STOP_REASON), 'unknown') AS stop_reason
-        FROM {_S}.USAGE_EVENTS
+        FROM {_L2}.EVENTS
         WHERE TEAM_ID = '{team_id}'
           AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
         GROUP BY SESSION_ID, USER_ID
@@ -290,7 +291,7 @@ def get_stop_reason_data(team_id: str, days: int) -> pd.DataFrame:
     SELECT
         COALESCE(STOP_REASON, 'unknown') AS STOP_REASON,
         COUNT(DISTINCT SESSION_ID)       AS SESSION_COUNT
-    FROM {_S}.USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND EVENT_TYPE = 'Stop'
       AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
@@ -310,7 +311,7 @@ def get_limit_hit_by_hour(team_id: str, days: int) -> pd.DataFrame:
     SELECT
         HOUR(EVENT_TIMESTAMP) AS HOUR_OF_DAY,
         COUNT(*)              AS LIMIT_HITS
-    FROM {_S}.USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND IS_USAGE_LIMIT = TRUE
       AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
@@ -336,7 +337,7 @@ def get_project_ranking(team_id: str, days: int, limit: int = 15) -> pd.DataFram
         COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END) AS MSG_COUNT,
         COUNT(CASE WHEN IS_SKILL = TRUE THEN 1 END)                 AS SKILL_COUNT,
         COUNT(CASE WHEN IS_MCP   = TRUE THEN 1 END)                 AS MCP_COUNT
-    FROM {_S}.USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TEAM_ID = '{team_id}'
       AND EVENT_TIMESTAMP >= DATEADD('day', -{days}, CURRENT_TIMESTAMP())
     GROUP BY 1
@@ -361,7 +362,7 @@ def get_monthly_active(team_id: str) -> pd.DataFrame:
             DATE_TRUNC('month', SUMMARY_DATE)::DATE AS MONTH,
             SUM(MESSAGE_COUNT)                      AS MESSAGES,
             SUM(SESSION_COUNT)                      AS SESSIONS
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
         GROUP BY 1
     ),
@@ -369,7 +370,7 @@ def get_monthly_active(team_id: str) -> pd.DataFrame:
         SELECT
             DATE_TRUNC('month', SUMMARY_DATE)::DATE AS MONTH,
             COUNT(DISTINCT USER_ID)                 AS ACTIVE_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
         GROUP BY 1
     )
@@ -405,7 +406,7 @@ def get_feature_adoption(team_id: str, days: int) -> pd.DataFrame:
             SUM(MCP_COUNT)      AS SUM_MCP,
             SUM(SUBAGENT_COUNT) AS SUM_SUBAGENT,
             SUM(COMMAND_COUNT)  AS SUM_COMMAND
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
         GROUP BY USER_ID
@@ -430,7 +431,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
             SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS,
             SUM(MESSAGE_COUNT)        AS MSG_COUNT,
             SUM(SESSION_COUNT)        AS SESS_COUNT
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     ),
@@ -438,7 +439,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
         SELECT
             COUNT(DISTINCT USER_ID) AS ACTIVE_USERS,
             SUM(TOTAL_EVENTS)       AS TOTAL_EVENTS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     ),
@@ -453,7 +454,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
             SELECT USER_ID,
                    SUM(SKILL_COUNT) AS SUM_SK, SUM(MCP_COUNT) AS SUM_MCP,
                    SUM(SUBAGENT_COUNT) AS SUM_SA, SUM(COMMAND_COUNT) AS SUM_CMD
-            FROM {_S}.USER_SUMMARY
+            FROM {_L3}.USER_SUMMARY
             WHERE TEAM_ID = '{team_id}'
               AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
             GROUP BY USER_ID
@@ -463,13 +464,13 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
         SELECT
             SUM(SUCCESS_COUNT)   AS TOOL_SUCCESS,
             SUM(EXECUTION_COUNT) AS TOOL_TOTAL
-        FROM {_S}.TOOL_SUMMARY
+        FROM {_L3}.TOOL_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     ),
     prev AS (
         SELECT SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
           AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
@@ -478,7 +479,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
         SELECT
             COUNT(DISTINCT USER_ID) AS ACTIVE_USERS,
             SUM(TOTAL_EVENTS)       AS TOTAL_EVENTS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
           AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
@@ -487,7 +488,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
         SELECT
             SUM(SUCCESS_COUNT)   AS TOOL_SUCCESS,
             SUM(EXECUTION_COUNT) AS TOOL_TOTAL
-        FROM {_S}.TOOL_SUMMARY
+        FROM {_L3}.TOOL_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
           AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
@@ -503,7 +504,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
             SELECT USER_ID,
                    SUM(SKILL_COUNT) AS SUM_SK, SUM(MCP_COUNT) AS SUM_MCP,
                    SUM(SUBAGENT_COUNT) AS SUM_SA, SUM(COMMAND_COUNT) AS SUM_CMD
-            FROM {_S}.USER_SUMMARY
+            FROM {_L3}.USER_SUMMARY
             WHERE TEAM_ID = '{team_id}'
               AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
               AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
@@ -512,7 +513,7 @@ def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
     ),
     tot AS (
         SELECT COUNT(DISTINCT USER_ID) AS TOTAL_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
     )
     SELECT
@@ -551,7 +552,7 @@ def get_productivity_trend(team_id: str, days: int) -> pd.DataFrame:
             SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS,
             SUM(MESSAGE_COUNT)        AS MESSAGES,
             SUM(SESSION_COUNT)        AS SESSIONS
-        FROM {_S}.DAILY_SUMMARY
+        FROM {_L3}.DAILY_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
         GROUP BY SUMMARY_DATE
@@ -560,7 +561,7 @@ def get_productivity_trend(team_id: str, days: int) -> pd.DataFrame:
         SELECT
             SUMMARY_DATE,
             COUNT(DISTINCT USER_ID) AS ACTIVE_USERS
-        FROM {_S}.USER_SUMMARY
+        FROM {_L3}.USER_SUMMARY
         WHERE TEAM_ID = '{team_id}'
           AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
         GROUP BY SUMMARY_DATE
@@ -596,7 +597,7 @@ def get_user_efficiency(team_id: str, days: int) -> pd.DataFrame:
         SUM(SKILL_COUNT)
           + SUM(MCP_COUNT)
           + SUM(SUBAGENT_COUNT)       AS ADVANCED_FEATURES
-    FROM {_S}.USER_SUMMARY
+    FROM {_L3}.USER_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
     GROUP BY USER_ID
@@ -623,7 +624,7 @@ def get_weekly_feature_mix(team_id: str, days: int) -> pd.DataFrame:
             SUM(TOOL_EXECUTION_COUNT)
               - SUM(SKILL_COUNT)
               - SUM(MCP_COUNT), 0)              AS BASIC_TOOLS
-    FROM {_S}.DAILY_SUMMARY
+    FROM {_L3}.DAILY_SUMMARY
     WHERE TEAM_ID = '{team_id}'
       AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
     GROUP BY 1

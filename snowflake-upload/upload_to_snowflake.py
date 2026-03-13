@@ -9,7 +9,13 @@
 """
 Claude Code Usage Tracker - Snowflake Upload
 ローカルの JSONL ログを Snowflake 内部ステージに PUT し、
-COPY INTO / MERGE INTO でテーブルを更新するスクリプト。
+LAYER1 → LAYER2 → LAYER3 のパイプラインでテーブルを更新する。
+
+パイプライン:
+  PUT → @LAYER1.STAGE
+  COPY INTO → LAYER1.RAW_EVENTS (VARIANT そのまま)
+  MERGE INTO → LAYER2.EVENTS (カラム展開・重複排除)
+  MERGE INTO → LAYER3.DAILY/USER/TOOL_SUMMARY
 
 Usage:
     uv run upload_to_snowflake.py --action upload [--force]
@@ -31,47 +37,74 @@ LOG_DIR = Path.home() / ".claude" / "usage-tracker-logs"
 UPLOADED_FILE = LOG_DIR / ".uploaded_files.json"
 KEY_DIR = Path.home() / ".snowflake"
 
-STAGE = "CLAUDE_USAGE_INTERNAL_STAGE"
+STAGE = "CLAUDE_USAGE_DB.LAYER1.CLAUDE_USAGE_INTERNAL_STAGE"
+
+_L1 = "CLAUDE_USAGE_DB.LAYER1"
+_L2 = "CLAUDE_USAGE_DB.LAYER2"
+_L3 = "CLAUDE_USAGE_DB.LAYER3"
 
 # ---------------------------------------------------------------------------
 # SQL テンプレート (snowflake/setup/02_load_data.sql と同一)
 # ---------------------------------------------------------------------------
-COPY_INTO_SQL = """
-COPY INTO USAGE_EVENTS (
-    EVENT_TYPE, EVENT_TIMESTAMP, USER_ID, TEAM_ID, SESSION_ID,
-    PROJECT_NAME, TOOL_NAME, TOOL_SUCCESS, OUTPUT_LENGTH, ERROR_MESSAGE,
-    PROMPT_LENGTH, IS_SKILL, IS_SUBAGENT, IS_MCP, IS_COMMAND, IS_FILE_OPERATION,
-    IS_USAGE_LIMIT, STOP_REASON, METADATA
-)
+
+# STEP 1: Stage → LAYER1.RAW_EVENTS
+COPY_INTO_RAW_SQL = f"""
+COPY INTO {_L1}.RAW_EVENTS (RAW_DATA, SOURCE_FILE)
 FROM (
     SELECT
-        $1:event_type::VARCHAR,
-        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo',
-            TRY_TO_TIMESTAMP_NTZ($1:timestamp::VARCHAR)),
-        $1:user_id::VARCHAR,
-        COALESCE($1:team_id::VARCHAR, 'default-team'),
-        $1:session_id::VARCHAR,
-        $1:project::VARCHAR,
-        $1:tool_name::VARCHAR,
-        $1:success::BOOLEAN,
-        $1:output_length::INTEGER,
-        $1:error::VARCHAR,
-        $1:prompt_length::INTEGER,
-        COALESCE($1:categories:skill::BOOLEAN,          FALSE),
-        COALESCE($1:categories:subagent::BOOLEAN,       FALSE),
-        COALESCE($1:categories:mcp::BOOLEAN,            FALSE),
-        COALESCE($1:categories:command::BOOLEAN,        FALSE),
-        COALESCE($1:categories:file_operation::BOOLEAN, FALSE),
-        COALESCE($1:is_usage_limit::BOOLEAN,            FALSE),
-        $1:stop_reason::VARCHAR,
-        $1::VARIANT
-    FROM @{stage}
+        $1,
+        METADATA$FILENAME
+    FROM @{STAGE}
 )
 ON_ERROR = 'CONTINUE';
 """.strip()
 
-MERGE_DAILY_SQL = """
-MERGE INTO DAILY_SUMMARY AS tgt
+# STEP 2: LAYER1.RAW_EVENTS → LAYER2.EVENTS (重複排除 MERGE)
+MERGE_EVENTS_SQL = f"""
+MERGE INTO {_L2}.EVENTS AS tgt
+USING (
+    SELECT
+        SHA2(RAW_DATA::VARCHAR)                                       AS EVENT_HASH,
+        RAW_DATA:event_type::VARCHAR                                  AS EVENT_TYPE,
+        CONVERT_TIMEZONE('UTC', 'Asia/Tokyo',
+            TRY_TO_TIMESTAMP_NTZ(RAW_DATA:timestamp::VARCHAR))        AS EVENT_TIMESTAMP,
+        RAW_DATA:user_id::VARCHAR                                     AS USER_ID,
+        COALESCE(RAW_DATA:team_id::VARCHAR, 'default-team')           AS TEAM_ID,
+        RAW_DATA:session_id::VARCHAR                                  AS SESSION_ID,
+        RAW_DATA:project::VARCHAR                                     AS PROJECT_NAME,
+        RAW_DATA:tool_name::VARCHAR                                   AS TOOL_NAME,
+        RAW_DATA:success::BOOLEAN                                     AS TOOL_SUCCESS,
+        RAW_DATA:output_length::INTEGER                               AS OUTPUT_LENGTH,
+        RAW_DATA:error::VARCHAR                                       AS ERROR_MESSAGE,
+        RAW_DATA:prompt_length::INTEGER                               AS PROMPT_LENGTH,
+        COALESCE(RAW_DATA:categories:skill::BOOLEAN,          FALSE)  AS IS_SKILL,
+        COALESCE(RAW_DATA:categories:subagent::BOOLEAN,       FALSE)  AS IS_SUBAGENT,
+        COALESCE(RAW_DATA:categories:mcp::BOOLEAN,            FALSE)  AS IS_MCP,
+        COALESCE(RAW_DATA:categories:command::BOOLEAN,        FALSE)  AS IS_COMMAND,
+        COALESCE(RAW_DATA:categories:file_operation::BOOLEAN, FALSE)  AS IS_FILE_OPERATION,
+        COALESCE(RAW_DATA:is_usage_limit::BOOLEAN,            FALSE)  AS IS_USAGE_LIMIT,
+        RAW_DATA:stop_reason::VARCHAR                                 AS STOP_REASON,
+        RAW_DATA                                                      AS RAW_DATA
+    FROM {_L1}.RAW_EVENTS
+    WHERE RAW_DATA:event_type IS NOT NULL
+) AS src
+ON tgt.EVENT_HASH = src.EVENT_HASH
+WHEN NOT MATCHED THEN INSERT (
+    EVENT_HASH, EVENT_TYPE, EVENT_TIMESTAMP, USER_ID, TEAM_ID,
+    SESSION_ID, PROJECT_NAME, TOOL_NAME, TOOL_SUCCESS, OUTPUT_LENGTH,
+    ERROR_MESSAGE, PROMPT_LENGTH, IS_SKILL, IS_SUBAGENT, IS_MCP,
+    IS_COMMAND, IS_FILE_OPERATION, IS_USAGE_LIMIT, STOP_REASON, RAW_DATA
+) VALUES (
+    src.EVENT_HASH, src.EVENT_TYPE, src.EVENT_TIMESTAMP, src.USER_ID, src.TEAM_ID,
+    src.SESSION_ID, src.PROJECT_NAME, src.TOOL_NAME, src.TOOL_SUCCESS, src.OUTPUT_LENGTH,
+    src.ERROR_MESSAGE, src.PROMPT_LENGTH, src.IS_SKILL, src.IS_SUBAGENT, src.IS_MCP,
+    src.IS_COMMAND, src.IS_FILE_OPERATION, src.IS_USAGE_LIMIT, src.STOP_REASON, src.RAW_DATA
+);
+""".strip()
+
+# STEP 3: LAYER2.EVENTS → LAYER3 サマリーテーブル
+MERGE_DAILY_SQL = f"""
+MERGE INTO {_L3}.DAILY_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE AS SUMMARY_DATE,
@@ -88,7 +121,7 @@ USING (
         COUNT(DISTINCT USER_ID)                          AS ACTIVE_USERS,
         ROUND(AVG(CASE WHEN TOOL_SUCCESS IS NOT NULL
             THEN CASE WHEN TOOL_SUCCESS THEN 1.0 ELSE 0.0 END END) * 100, 1) AS SUCCESS_RATE
-    FROM USAGE_EVENTS
+    FROM {_L2}.EVENTS
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), TEAM_ID
 ) AS src
 ON tgt.SUMMARY_DATE = src.SUMMARY_DATE AND tgt.TEAM_ID = src.TEAM_ID
@@ -116,8 +149,8 @@ WHEN NOT MATCHED THEN INSERT (
 );
 """.strip()
 
-MERGE_USER_SQL = """
-MERGE INTO USER_SUMMARY AS tgt
+MERGE_USER_SQL = f"""
+MERGE INTO {_L3}.USER_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE AS SUMMARY_DATE,
@@ -133,7 +166,7 @@ USING (
         COUNT(CASE WHEN IS_SKILL    = TRUE THEN 1 END)  AS SKILL_COUNT,
         COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END) AS LIMIT_HIT_COUNT,
         MAX(EVENT_TIMESTAMP)                             AS LAST_ACTIVE_AT
-    FROM USAGE_EVENTS
+    FROM {_L2}.EVENTS
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), USER_ID, TEAM_ID
 ) AS src
 ON  tgt.SUMMARY_DATE = src.SUMMARY_DATE
@@ -162,8 +195,8 @@ WHEN NOT MATCHED THEN INSERT (
 );
 """.strip()
 
-MERGE_TOOL_SQL = """
-MERGE INTO TOOL_SUMMARY AS tgt
+MERGE_TOOL_SQL = f"""
+MERGE INTO {_L3}.TOOL_SUMMARY AS tgt
 USING (
     SELECT
         DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE AS SUMMARY_DATE,
@@ -172,7 +205,7 @@ USING (
         COUNT(*)                                           AS EXECUTION_COUNT,
         COUNT(CASE WHEN TOOL_SUCCESS = TRUE  THEN 1 END)  AS SUCCESS_COUNT,
         COUNT(CASE WHEN TOOL_SUCCESS = FALSE THEN 1 END)  AS FAILURE_COUNT
-    FROM USAGE_EVENTS
+    FROM {_L2}.EVENTS
     WHERE TOOL_NAME IS NOT NULL
     GROUP BY DATE_TRUNC('DAY', EVENT_TIMESTAMP), TEAM_ID, TOOL_NAME
 ) AS src
@@ -232,6 +265,21 @@ def get_username() -> str:
     return os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
 
 
+def _set_user_env(name: str, value: str):
+    """環境変数をプロセスとWindowsユーザー環境変数の両方に設定。"""
+    os.environ[name] = value
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r"Environment",
+                0, winreg.KEY_SET_VALUE
+            ) as key:
+                winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
+        except OSError:
+            pass
+
+
 def load_uploaded() -> list[str]:
     """アップロード済みファイル一覧を読み込む。"""
     if not UPLOADED_FILE.exists():
@@ -262,7 +310,6 @@ def create_connection():
     passphrase = get_env("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
     warehouse = get_env("SNOWFLAKE_WAREHOUSE", "CLAUDE_USAGE_WH")
     database = get_env("SNOWFLAKE_DATABASE", "CLAUDE_USAGE_DB")
-    schema = get_env("SNOWFLAKE_SCHEMA", "LAYER3")
 
     if not account or not user:
         write_fail("SNOWFLAKE_ACCOUNT / SNOWFLAKE_USER が設定されていません")
@@ -290,7 +337,6 @@ def create_connection():
         private_key=private_key_bytes,
         warehouse=warehouse,
         database=database,
-        schema=schema,
     )
     return conn
 
@@ -298,7 +344,7 @@ def create_connection():
 # ---------------------------------------------------------------------------
 # アクション: generate-key
 # ---------------------------------------------------------------------------
-def action_generate_key():
+def action_generate_key(no_input: bool = False):
     """RSA キーペアを生成し公開鍵を表示する。"""
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
@@ -308,6 +354,13 @@ def action_generate_key():
     pub_path = KEY_DIR / "rsa_key.pub"
 
     if priv_path.exists():
+        if no_input:
+            # 非対話モード: 既存キーをそのまま使用
+            write_info(f"既存のキーペアを使用: {priv_path}")
+            if pub_path.exists():
+                pub_text = pub_path.read_text(encoding="utf-8")
+                _show_public_key(pub_text)
+            return
         write_info(f"既存のキーペアが見つかりました: {priv_path}")
         resp = input("上書きしますか？ (y/N): ").strip().lower()
         if resp != "y":
@@ -381,12 +434,12 @@ def action_config():
          get_env("SNOWFLAKE_WAREHOUSE", "CLAUDE_USAGE_WH")),
         ("SNOWFLAKE_DATABASE",
          get_env("SNOWFLAKE_DATABASE", "CLAUDE_USAGE_DB")),
-        ("SNOWFLAKE_SCHEMA", get_env("SNOWFLAKE_SCHEMA", "LAYER3")),
         ("USAGE_TRACKER_USER_ID", get_username()),
     ]
     for name, val in items:
         print(f"  {name}: {val}")
     print(f"  Log Dir: {LOG_DIR}")
+    print(f"  Stage:   @{STAGE}")
     print()
 
     # 接続テスト
@@ -396,7 +449,15 @@ def action_config():
         cur = conn.cursor()
         cur.execute("SELECT CURRENT_USER(), CURRENT_ROLE(), CURRENT_WAREHOUSE()")
         row = cur.fetchone()
-        write_ok(f"接続成功 - User: {row[0]}, Role: {row[1]}, WH: {row[2]}")
+        sf_user = row[0]
+        write_ok(f"接続成功 - User: {sf_user}, Role: {row[1]}, WH: {row[2]}")
+
+        # USAGE_TRACKER_USER_ID を Snowflake ユーザー名で自動設定
+        current_uid = get_env("USAGE_TRACKER_USER_ID")
+        if not current_uid or current_uid != sf_user:
+            _set_user_env("USAGE_TRACKER_USER_ID", sf_user)
+            write_ok(f"USAGE_TRACKER_USER_ID = {sf_user} (Snowflake ユーザー名で自動設定)")
+
         cur.close()
         conn.close()
     except Exception as e:
@@ -448,7 +509,7 @@ def action_list():
 # アクション: upload
 # ---------------------------------------------------------------------------
 def action_upload(force: bool = False):
-    """PUT → COPY INTO → MERGE INTO のフルパイプライン。"""
+    """PUT → LAYER1 → LAYER2 → LAYER3 のフルパイプライン。"""
     username = get_username()
     write_info(f"ユーザー: {username}")
 
@@ -487,7 +548,7 @@ def action_upload(force: bool = False):
     newly_uploaded = []
 
     try:
-        # --- PUT ---
+        # --- PUT → @LAYER1.STAGE ---
         for f in files_to_upload:
             local_path = str(f).replace("\\", "/")
             stage_path = f"@{STAGE}/{username}/"
@@ -496,59 +557,65 @@ def action_upload(force: bool = False):
                 f"AUTO_COMPRESS=TRUE OVERWRITE=TRUE"
             )
             try:
-                print(f"  [UP] {f.name} -> {stage_path}")
+                print(f"  [PUT] {f.name} -> {stage_path}")
                 cur.execute(put_sql)
                 result = cur.fetchall()
-                # PUT結果: source, target, src_size, tgt_size, src_compress,
-                #          tgt_compress, status, message
                 status = result[0][6] if result and len(result[0]) > 6 else "UNKNOWN"
                 if status in ("UPLOADED", "SKIPPED"):
-                    print(f"       {status}")
+                    print(f"        {status}")
                     newly_uploaded.append(f.name)
                 else:
-                    write_fail(f"       PUT status: {status}")
+                    write_fail(f"        PUT status: {status}")
             except Exception as e:
-                write_fail(f"       PUT失敗: {e}")
+                write_fail(f"        PUT失敗: {e}")
 
         if not newly_uploaded:
-            write_info("アップロードされたファイルがありません。COPY INTO をスキップします。")
+            write_info("アップロードされたファイルがありません。")
             return
 
-        # --- COPY INTO ---
+        # --- STEP 1: COPY INTO LAYER1.RAW_EVENTS ---
         print()
-        write_info("COPY INTO USAGE_EVENTS 実行中...")
+        write_info("STEP 1: COPY INTO LAYER1.RAW_EVENTS ...")
         try:
-            copy_sql = COPY_INTO_SQL.format(stage=STAGE)
+            copy_sql = COPY_INTO_RAW_SQL
             if force:
-                # --force 時は FORCE=TRUE で再ロードを許可
                 copy_sql = copy_sql.replace(
                     "ON_ERROR = 'CONTINUE'",
                     "ON_ERROR = 'CONTINUE'\nFORCE = TRUE"
                 )
             cur.execute(copy_sql)
             rows = cur.fetchall()
-            # COPY結果: file, status, rows_parsed, rows_loaded, error_limit,
-            #           errors_seen, first_error, ...
             loaded = 0
-            errors = 0
             for r in rows or []:
                 if len(r) > 3:
                     loaded += r[3] if isinstance(r[3], int) else 0
-                if len(r) > 5:
-                    errors += r[5] if isinstance(r[5], int) else 0
-            write_ok(f"COPY INTO 完了 - loaded: {loaded} rows, errors: {errors}")
+            write_ok(f"LAYER1.RAW_EVENTS: {loaded} rows loaded")
         except Exception as e:
             write_fail(f"COPY INTO 失敗: {e}")
             return
 
-        # --- MERGE INTO ---
+        # --- STEP 2: MERGE INTO LAYER2.EVENTS ---
+        print()
+        write_info("STEP 2: MERGE INTO LAYER2.EVENTS (重複排除) ...")
+        try:
+            cur.execute(MERGE_EVENTS_SQL)
+            row = cur.fetchone()
+            inserted = row[0] if row else 0
+            write_ok(f"LAYER2.EVENTS: {inserted} new rows inserted")
+        except Exception as e:
+            write_fail(f"MERGE INTO LAYER2.EVENTS 失敗: {e}")
+            return
+
+        # --- STEP 3: MERGE INTO LAYER3 サマリーテーブル ---
+        print()
+        write_info("STEP 3: LAYER3 サマリーテーブル更新 ...")
         for label, sql in [
             ("DAILY_SUMMARY", MERGE_DAILY_SQL),
             ("USER_SUMMARY", MERGE_USER_SQL),
             ("TOOL_SUMMARY", MERGE_TOOL_SQL),
         ]:
             try:
-                write_info(f"MERGE INTO {label} 実行中...")
+                write_info(f"  MERGE INTO {label} ...")
                 cur.execute(sql)
                 row = cur.fetchone()
                 inserted = row[0] if row else 0
@@ -586,10 +653,14 @@ def main():
         "--force", action="store_true",
         help="アップロード済みファイルも再アップロード",
     )
+    parser.add_argument(
+        "--no-input", action="store_true",
+        help="非対話モード（自動セットアップ用）",
+    )
     args = parser.parse_args()
 
     if args.action == "generate-key":
-        action_generate_key()
+        action_generate_key(no_input=args.no_input)
     elif args.action == "config":
         action_config()
     elif args.action == "list":

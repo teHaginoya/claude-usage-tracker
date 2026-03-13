@@ -1,0 +1,153 @@
+# Claude Code Usage Tracker - 管理者ガイド
+
+Snowflake 管理者向けの手順書です。新しいメンバーの追加やシステムの初期構築を行います。
+
+---
+
+## 初期構築（1回のみ）
+
+### 1. Snowflake オブジェクトの作成
+
+以下の SQL を順番に実行してください:
+
+```sql
+-- 1. ウェアハウス・DB・スキーマ・テーブル・ビューの作成
+-- snowflake/setup/01_create_tables.sql を実行
+
+-- 2. 分析用ビューの作成
+-- snowflake/setup/04_create_analytical_tables.sql を実行
+
+-- 3. Streamlit アプリの作成（任意）
+-- snowflake/setup/03_create_streamlit.sql を実行
+```
+
+### 2. ロールの作成（推奨）
+
+メンバー用の共通ロールを作成しておくと管理が楽です:
+
+```sql
+CREATE ROLE IF NOT EXISTS CLAUDE_USAGE_UPLOADER
+    COMMENT = 'Claude Code Usage Tracker アップロード用ロール';
+
+-- 必要な権限を付与
+GRANT USAGE ON WAREHOUSE CLAUDE_USAGE_WH TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT USAGE ON DATABASE CLAUDE_USAGE_DB TO ROLE CLAUDE_USAGE_UPLOADER;
+
+GRANT USAGE ON SCHEMA CLAUDE_USAGE_DB.LAYER1 TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT USAGE ON SCHEMA CLAUDE_USAGE_DB.LAYER2 TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT USAGE ON SCHEMA CLAUDE_USAGE_DB.LAYER3 TO ROLE CLAUDE_USAGE_UPLOADER;
+
+-- LAYER1: ステージへの読み書き + RAW_EVENTS への INSERT
+GRANT READ, WRITE ON STAGE CLAUDE_USAGE_DB.LAYER1.CLAUDE_USAGE_INTERNAL_STAGE
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT INSERT, SELECT ON TABLE CLAUDE_USAGE_DB.LAYER1.RAW_EVENTS
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+
+-- LAYER2: EVENTS への SELECT + INSERT（MERGE 用）
+GRANT SELECT, INSERT ON TABLE CLAUDE_USAGE_DB.LAYER2.EVENTS
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+
+-- LAYER3: サマリーテーブルへの SELECT + INSERT + UPDATE（MERGE 用）
+GRANT SELECT, INSERT, UPDATE ON TABLE CLAUDE_USAGE_DB.LAYER3.DAILY_SUMMARY
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT SELECT, INSERT, UPDATE ON TABLE CLAUDE_USAGE_DB.LAYER3.USER_SUMMARY
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+GRANT SELECT, INSERT, UPDATE ON TABLE CLAUDE_USAGE_DB.LAYER3.TOOL_SUMMARY
+    TO ROLE CLAUDE_USAGE_UPLOADER;
+```
+
+---
+
+## 新しいメンバーの追加
+
+各メンバーは管理者と同じ権限の Snowflake ユーザーを持っており、自分の LOGIN_NAME も把握しています。
+管理者からメンバーに伝える情報はありません。
+
+メンバーはリポジトリをクローンし、[セットアップガイド](SETUP_GUIDE_FOR_TEAM.md) に従って自分で全手順を完了できます:
+
+- RSA キーペアの生成（スクリプトで自動）
+- 公開鍵の登録（Snowsight で `ALTER USER SET RSA_PUBLIC_KEY` を実行）
+- 接続テスト・タスクスケジューラ登録
+
+> **Note**: アカウント識別子 (`MYLMWWX-DPF002`) はセットアップスクリプトにデフォルト値として埋め込み済みです。
+> `USAGE_TRACKER_USER_ID` は接続テスト成功時に `CURRENT_USER()` から自動設定されます。
+
+### 登録確認
+
+メンバーが接続テストを実施した後、データが上がっているか確認:
+
+```sql
+SELECT USER_ID, COUNT(*), MIN(EVENT_TIMESTAMP), MAX(EVENT_TIMESTAMP)
+FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
+GROUP BY USER_ID
+ORDER BY USER_ID;
+```
+
+---
+
+## 公開鍵の更新
+
+メンバーの鍵を再発行する場合:
+
+```sql
+-- 既存の鍵を無効化して新しい鍵を設定
+ALTER USER YAMADATARO SET RSA_PUBLIC_KEY='（新しい公開鍵）';
+```
+
+---
+
+## データの確認
+
+### 各レイヤーの行数
+
+```sql
+SELECT 'LAYER1.RAW_EVENTS'    AS TABLE_NAME, COUNT(*) AS ROW_COUNT FROM CLAUDE_USAGE_DB.LAYER1.RAW_EVENTS  UNION ALL
+SELECT 'LAYER2.EVENTS',                      COUNT(*) FROM CLAUDE_USAGE_DB.LAYER2.EVENTS                  UNION ALL
+SELECT 'LAYER3.DAILY_SUMMARY',               COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.DAILY_SUMMARY           UNION ALL
+SELECT 'LAYER3.USER_SUMMARY',                COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.USER_SUMMARY            UNION ALL
+SELECT 'LAYER3.TOOL_SUMMARY',                COUNT(*) FROM CLAUDE_USAGE_DB.LAYER3.TOOL_SUMMARY;
+```
+
+### ユーザー別の最新アクティビティ
+
+```sql
+SELECT USER_ID, COUNT(*) AS EVENTS, MAX(EVENT_TIMESTAMP) AS LAST_ACTIVE
+FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
+GROUP BY USER_ID
+ORDER BY LAST_ACTIVE DESC;
+```
+
+### ステージ上のファイル一覧
+
+```sql
+LIST @CLAUDE_USAGE_DB.LAYER1.CLAUDE_USAGE_INTERNAL_STAGE;
+```
+
+---
+
+## トラブルシューティング
+
+### メンバーが接続できない
+
+1. ユーザーが作成済みか確認: `SHOW USERS LIKE 'YAMADATARO';`
+2. 公開鍵が登録済みか確認: `DESC USER YAMADATARO;` → `RSA_PUBLIC_KEY` の値
+3. LOGIN_NAME が正しいか確認: `SHOW USERS LIKE 'YAMADATARO';` → `login_name` 列
+
+### データが重複している
+
+LAYER2.EVENTS は `SHA2(RAW_DATA)` をキーに MERGE するため、同一データの重複は発生しません。
+LAYER1.RAW_EVENTS に重複がある場合は正常です（LAYER2 で排除されます）。
+
+### ユーザーIDを変更したい
+
+```sql
+-- LAYER2.EVENTS のユーザーIDを変更
+UPDATE CLAUDE_USAGE_DB.LAYER2.EVENTS
+SET USER_ID = '新しいID'
+WHERE USER_ID = '古いID';
+
+-- LAYER3.USER_SUMMARY のユーザーIDも変更
+UPDATE CLAUDE_USAGE_DB.LAYER3.USER_SUMMARY
+SET USER_ID = '新しいID'
+WHERE USER_ID = '古いID';
+```
