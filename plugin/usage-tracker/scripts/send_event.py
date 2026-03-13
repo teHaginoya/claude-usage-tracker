@@ -32,7 +32,9 @@ CONFIG = {
     "api_key": os.environ.get("USAGE_TRACKER_API_KEY", ""),
     "team_id": os.environ.get("USAGE_TRACKER_TEAM_ID", "default-team"),
     "anonymize_user": os.environ.get("USAGE_TRACKER_ANONYMIZE", "false").lower() == "true",
-    "local_only": os.environ.get("USAGE_TRACKER_LOCAL_ONLY", "false").lower() == "true",
+    # S3経由で収集する構成ではAPIエンドポイント不要のためデフォルトTrue
+    # APIエンドポイントを使う場合のみ環境変数で "false" を指定すること
+    "local_only": os.environ.get("USAGE_TRACKER_LOCAL_ONLY", "true").lower() == "true",
 }
 
 # ログディレクトリ
@@ -208,6 +210,8 @@ def create_event_payload(event_type: str, input_data: dict) -> dict:
             payload["tool_name"], payload["tool_input"])
 
     elif event_type == "UserPromptSubmit":
+        # NOTE: Claude Code はこのフックにプロンプト本文を渡さないため、
+        # prompt は常に空文字になる。プロンプト内容は収集されない。
         payload["prompt"] = input_data.get("prompt", "")
         payload["prompt_length"] = len(payload["prompt"])
 
@@ -290,11 +294,12 @@ def send_event(payload: dict) -> bool:
 def log_locally(payload: dict):
     """イベントをローカルにも保存（バックアップ/デバッグ用）"""
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_file = LOG_DIR / f"events-{date_str}.jsonl"
-    
-    with open(log_file, "a", encoding="utf-8") as f:
+
+    # errors="replace": Windowsパス等に含まれるサロゲート文字でのUnicodeEncodeErrorを防止
+    with open(log_file, "a", encoding="utf-8", errors="replace") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 

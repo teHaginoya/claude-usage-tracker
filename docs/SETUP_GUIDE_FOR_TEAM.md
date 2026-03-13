@@ -8,10 +8,10 @@
 ## 全体の流れ
 
 ```text
-Step 1: 必要なツールのインストール（Git, uv, AWS CLI）
+Step 1: 必要なツールのインストール（Git, uv）
 Step 2: リポジトリのクローン
 Step 3: Claude Code プラグインのインストール
-Step 4: AWS認証情報の設定
+Step 4: Snowflake キーペア認証の設定
 Step 5: 動作確認
 Step 6: 自動アップロードの設定
 ```
@@ -23,8 +23,8 @@ Step 6: 自動アップロードの設定
 - Windows PC
 - Claude Code がインストール済み
 - 管理者から受け取るもの:
-  - AWS Access Key ID
-  - AWS Secret Access Key
+  - Snowflake アカウント識別子 (例: `abc12345.ap-northeast-1.aws`)
+  - Snowflake ユーザー名
 
 ---
 
@@ -95,7 +95,7 @@ git clone https://github.com/teHaginoya/claude-usage-tracker.git
 dir $env:USERPROFILE\claude-usage-tracker
 ```
 
-`plugin/`, `s3-upload/`, `docs/` などのフォルダが表示されればOKです。
+`plugin/`, `snowflake-upload/`, `docs/` などのフォルダが表示されればOKです。
 
 ---
 
@@ -157,62 +157,57 @@ claude
 
 ---
 
-## Step 4: AWS CLIのインストールと認証情報の設定
+## Step 4: Snowflake キーペア認証の設定
 
-### 4-1. s3-uploadフォルダに移動
+### 4-1. snowflake-uploadフォルダに移動
 
 ```powershell
-cd $env:USERPROFILE\claude-usage-tracker\s3-upload
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
 ```
 
 ### 4-2. スクリプトのブロックを解除
 
 ```powershell
-Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1
+Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\snowflake-upload\setup_snowflake.ps1
 ```
 
-### 4-3. AWS CLIをインストール
+### 4-3. セットアップを実行
 
 ```powershell
-.\setup_and_upload.ps1 -Action setup-aws
+.\setup_snowflake.ps1 -Action setup
 ```
 
-「AWS credentials already configured」と表示されたり、認証情報の入力を求められたりした場合は、スキップまたは後の手順で設定します。
-AWS CLIが既にインストール済みの場合は自動でスキップされます。
-
-### 4-4. 環境変数を設定
-
-S3バケット名はリポジトリの `s3-upload/config.json` に設定済みなので、自動で読み込まれます。
-
-```powershell
-.\setup_and_upload.ps1 -Action setup-local
-```
-
-途中で以下のように聞かれます:
+対話形式で以下を入力します:
 
 ```text
-Enter your user ID (e.g. yamada.taro): （自分の名前を入力、例: yamada.taro）
+Snowflake アカウント識別子: （管理者から受け取った値、例: abc12345.ap-northeast-1.aws）
+Snowflake ユーザー名: （管理者から受け取った値）
+あなたのユーザー ID: （自分の名前を入力、例: yamada.taro）
 ```
 
-ここで入力した名前がS3のファイル名に使われます。
-例: `yamada.taro-events-20260217.jsonl`
+セットアップ中に RSA キーペアが自動生成され、公開鍵が表示されます。
 
-### 4-5. AWS認証情報を設定
+### 4-4. 公開鍵を管理者に渡す
 
-PowerShellで以下を実行:
+表示された公開鍵（1行の長い文字列）をコピーして管理者に送ってください。
+管理者が Snowflake 側で以下の SQL を実行してキーを登録します:
+
+```sql
+ALTER USER <ユーザー名> SET RSA_PUBLIC_KEY='ここに公開鍵';
+```
+
+### 4-5. 接続テスト
+
+管理者がキー登録を完了したら、接続テストを実行:
 
 ```powershell
-aws configure
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+.\setup_snowflake.ps1 -Action upload
 ```
 
-順番に入力:
+「[OK] 接続成功」「[OK] COPY INTO 完了」と表示されれば成功です。
 
-```text
-AWS Access Key ID [None]: （管理者から受け取ったアクセスキー）
-AWS Secret Access Key [None]: （管理者から受け取ったシークレットキー）
-Default region name [None]: ap-northeast-1
-Default output format [None]: json
-```
+> **注意**: 管理者がキーを登録する前に実行すると接続エラーになります。
 
 ---
 
@@ -228,44 +223,43 @@ dir $env:USERPROFILE\.claude\usage-tracker-logs\
 
 ※ ファイルがない場合は、Claude Codeを少し使ってから再確認してください。
 
-### 5-2. S3にアップロードしてみる
+### 5-2. Snowflakeにアップロードしてみる
 
 ```powershell
-cd $env:USERPROFILE\claude-usage-tracker\s3-upload
-.\setup_and_upload.ps1 -Action upload
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+.\setup_snowflake.ps1 -Action upload
 ```
 
-「[UP] events-XXXX-XX-XX.jsonl → s3://...」と表示され、
-「OK」が出れば成功です。
+「[UP] events-XXXX-XX-XX.jsonl -> @CLAUDE_USAGE_INTERNAL_STAGE/...」と表示され、
+「[OK] 完了」が出れば成功です。
 
-### 5-3. アップロードされたか確認
+### 5-3. ログファイルの一覧を確認
 
 ```powershell
-aws s3 ls s3://claude-activity-log-632903090408/claude-usage-logs/ --recursive
+uv run upload_to_snowflake.py --action list
 ```
 
-ファイルが表示されればOKです。
+各ファイルの横に `[済]` / `[未]` が表示されます。
 
 ---
 
 ## Step 6: 自動アップロードの設定（オプション）
 
-毎日自動でログをアップロードする設定です。
+毎日自動でログをSnowflakeにアップロードする設定です。
 
 ### 6-1. タスクスケジューラに登録
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1 -Action upload"
-$trigger = New-ScheduledTaskTrigger -Daily -At 3am
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopIfGoingOnBatteries
-
-Register-ScheduledTask -TaskName "Claude Usage Log Upload" -Action $action -Trigger $trigger -Settings $settings -Description "Claude Codeの利用ログをS3にアップロード"
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+.\setup_snowflake.ps1 -Action register-task
 ```
+
+旧S3アップロードタスクがある場合は削除するか聞かれます。
 
 ### 6-2. 登録されたか確認
 
 ```powershell
-Get-ScheduledTask -TaskName "Claude Usage Log Upload"
+Get-ScheduledTask -TaskName "Claude Usage Snowflake Upload"
 ```
 
 「Ready」と表示されればOKです。
@@ -280,13 +274,13 @@ Get-ScheduledTask -TaskName "Claude Usage Log Upload"
 
 - **普段使い**: いつも通りClaude Codeを使うだけでOK
   - ログは自動で記録されます
-  - 毎日午前3時に自動でS3にアップロードされます（Step 6を実施した場合）
+  - 毎日午前3時に自動でSnowflakeにアップロードされます（Step 6を実施した場合）
 
 - **手動でアップロードしたい時**:
 
   ```powershell
-  cd $env:USERPROFILE\claude-usage-tracker\s3-upload
-  .\setup_and_upload.ps1 -Action upload
+  cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+  .\setup_snowflake.ps1 -Action upload
   ```
 
 - **自分の統計を見たい時**:
@@ -317,12 +311,34 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 → 以下を実行:
 
 ```powershell
-Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upload.ps1
+Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\snowflake-upload\setup_snowflake.ps1
 ```
 
-### 「Access Denied」
+### Snowflake 接続エラー
 
-→ AWS認証情報が正しく設定されていません。管理者に確認してください。
+→ 以下を確認してください:
+
+1. 管理者が公開鍵を登録済みか
+2. `SNOWFLAKE_ACCOUNT` / `SNOWFLAKE_USER` が正しく設定されているか
+3. 秘密鍵ファイルが `~/.snowflake/rsa_key.p8` に存在するか
+
+設定確認:
+
+```powershell
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+uv run upload_to_snowflake.py --action config
+```
+
+### 「秘密鍵が見つかりません」
+
+→ キーペアを再生成してください:
+
+```powershell
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+uv run upload_to_snowflake.py --action generate-key
+```
+
+生成後、新しい公開鍵を管理者に渡して再登録してもらってください。
 
 ### 「ログファイルが見つからない」
 
@@ -339,6 +355,27 @@ Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\s3-upload\setup_and_upl
 
 → 環境変数が読み込まれていない可能性があります。
 PowerShellを新しく開いて再度お試しください。
+
+### errors.log にSSL接続エラーが大量に記録される
+
+→ 古いバージョンのプラグインを使っている可能性があります。
+最新版では `USAGE_TRACKER_LOCAL_ONLY` のデフォルトが `true` に変更されています。
+`git pull` でリポジトリを更新し、プラグインを再インストールしてください。
+
+### Stopフックで UnicodeEncodeError が出る
+
+→ Windows日本語環境でパス文字列にサロゲート文字が含まれる場合に発生します。
+最新版では `errors="replace"` で対処済みです。
+`git pull` でリポジトリを更新し、プラグインを再インストールしてください。
+
+### COPY INTO で 0 rows loaded と表示される
+
+→ ファイルが既にロード済みの可能性があります。
+強制再アップロードする場合:
+
+```powershell
+uv run upload_to_snowflake.py --action upload --force
+```
 
 ---
 

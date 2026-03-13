@@ -25,6 +25,14 @@ $ErrorActionPreference = "Stop"
 $LogDir = Join-Path $env:USERPROFILE ".claude\usage-tracker-logs"
 $UploadedFile = Join-Path $LogDir ".uploaded_files.json"
 
+# タスクスケジューラ実行時にユーザー環境変数を確実に読み込む
+foreach ($varName in @("AWS_PROFILE", "USAGE_TRACKER_S3_BUCKET", "USAGE_TRACKER_S3_PREFIX", "USAGE_TRACKER_USER_ID", "AWS_REGION")) {
+    if (-not [Environment]::GetEnvironmentVariable($varName, "Process")) {
+        $userVal = [Environment]::GetEnvironmentVariable($varName, "User")
+        if ($userVal) { [Environment]::SetEnvironmentVariable($varName, $userVal, "Process") }
+    }
+}
+
 function Write-Step {
     param([string]$Message)
     Write-Host ""
