@@ -175,16 +175,15 @@ function Invoke-Setup {
 
     # 接続テスト（キー未登録の場合は失敗する）
     Write-Step "接続テスト"
-    Write-Info "管理者がまだ公開鍵を登録していない場合、接続テストは失敗します"
+    Write-Info "Snowsight で公開鍵を登録していない場合、接続テストは失敗します"
     Write-Info "その場合は、キー登録完了後に再テストしてください"
     Write-Host ""
     & uv run $PythonScript --action config
 
     Write-Host ""
     Write-Success "セットアップ完了"
-    Write-Info "管理者に公開鍵を渡し、ALTER USER で登録してもらってください"
-    Write-Info "登録後の接続テスト: uv run upload_to_snowflake.py --action config"
-    Write-Info "アップロードテスト: .\setup_snowflake.ps1 -Action upload"
+    Write-Info "Snowsight で ALTER USER <ユーザー名> SET RSA_PUBLIC_KEY='公開鍵' を実行してください"
+    Write-Info "登録後の接続テスト: .\setup_snowflake.ps1 -Action upload"
 }
 
 # =====================================================================
