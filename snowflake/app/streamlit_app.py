@@ -743,6 +743,7 @@ from tab_tools     import render_tools
 from tab_sessions  import render_sessions
 from tab_projects  import render_projects
 from tab_adoption  import render_adoption
+from tab_roi       import render_roi
 
 # =============================================================================
 # メイン
@@ -779,9 +780,9 @@ def main():
 
     team_id = "default-team"
 
-    # ── 6タブ ─────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "概要", "ユーザー", "ツール", "セッション", "プロジェクト", "普及",
+    # ── 7タブ ─────────────────────────────────────────────────────
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "概要", "ユーザー", "ツール", "セッション", "プロジェクト", "普及", "導入効果",
     ])
 
     with tab1: render_overview(team_id, days)
@@ -790,6 +791,7 @@ def main():
     with tab4: render_sessions(team_id, days)
     with tab5: render_projects(team_id, days)
     with tab6: render_adoption(team_id, days)
+    with tab7: render_roi(team_id, days)
 
 
 # =============================================================================

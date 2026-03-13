@@ -62,7 +62,14 @@ def render_sessions(team_id: str, days: int):
     with c1:
         stop_df = get_stop_reason_data(team_id, days)
         if stop_df.empty:
-            st.info("停止理由データがありません")
+            st.markdown(
+                '<div style="display:flex;align-items:center;justify-content:center;'
+                'min-height:318px;background:var(--bg-card);border:1px solid var(--border);'
+                'border-radius:var(--radius-lg);color:var(--accent-blue);'
+                'font-size:0.875rem;box-shadow:var(--shadow-sm);">'
+                '停止理由データがありません</div>',
+                unsafe_allow_html=True,
+            )
         else:
             stop_df.columns = [c.upper() for c in stop_df.columns]
 

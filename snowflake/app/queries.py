@@ -415,3 +415,221 @@ def get_feature_adoption(team_id: str, days: int) -> pd.DataFrame:
         return get_session().sql(query).to_pandas()
     except Exception:
         return pd.DataFrame()
+
+
+# =============================================================================
+# Tab7 導入効果
+# =============================================================================
+
+@st.cache_data(ttl=300)
+def get_roi_kpi(team_id: str, days: int) -> pd.DataFrame:
+    """導入効果KPI（DAILY/USER/TOOL_SUMMARY 横断）"""
+    query = f"""
+    WITH cur AS (
+        SELECT
+            SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS,
+            SUM(MESSAGE_COUNT)        AS MSG_COUNT,
+            SUM(SESSION_COUNT)        AS SESS_COUNT
+        FROM {_S}.DAILY_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    cur_users AS (
+        SELECT
+            COUNT(DISTINCT USER_ID) AS ACTIVE_USERS,
+            SUM(TOTAL_EVENTS)       AS TOTAL_EVENTS
+        FROM {_S}.USER_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    cur_feat AS (
+        SELECT
+            COUNT(DISTINCT USER_ID)                                  AS FEAT_TOTAL,
+            COUNT(DISTINCT CASE WHEN SUM_SK  > 0 THEN USER_ID END)  AS SKILL_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_MCP > 0 THEN USER_ID END)  AS MCP_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_SA  > 0 THEN USER_ID END)  AS SA_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_CMD > 0 THEN USER_ID END)  AS CMD_USERS
+        FROM (
+            SELECT USER_ID,
+                   SUM(SKILL_COUNT) AS SUM_SK, SUM(MCP_COUNT) AS SUM_MCP,
+                   SUM(SUBAGENT_COUNT) AS SUM_SA, SUM(COMMAND_COUNT) AS SUM_CMD
+            FROM {_S}.USER_SUMMARY
+            WHERE TEAM_ID = '{team_id}'
+              AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
+            GROUP BY USER_ID
+        )
+    ),
+    cur_tools AS (
+        SELECT
+            SUM(SUCCESS_COUNT)   AS TOOL_SUCCESS,
+            SUM(EXECUTION_COUNT) AS TOOL_TOTAL
+        FROM {_S}.TOOL_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    prev AS (
+        SELECT SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS
+        FROM {_S}.DAILY_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
+          AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    prev_users AS (
+        SELECT
+            COUNT(DISTINCT USER_ID) AS ACTIVE_USERS,
+            SUM(TOTAL_EVENTS)       AS TOTAL_EVENTS
+        FROM {_S}.USER_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
+          AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    prev_tools AS (
+        SELECT
+            SUM(SUCCESS_COUNT)   AS TOOL_SUCCESS,
+            SUM(EXECUTION_COUNT) AS TOOL_TOTAL
+        FROM {_S}.TOOL_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
+          AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
+    ),
+    prev_feat AS (
+        SELECT
+            COUNT(DISTINCT USER_ID)                                  AS FEAT_TOTAL,
+            COUNT(DISTINCT CASE WHEN SUM_SK  > 0 THEN USER_ID END)  AS SKILL_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_MCP > 0 THEN USER_ID END)  AS MCP_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_SA  > 0 THEN USER_ID END)  AS SA_USERS,
+            COUNT(DISTINCT CASE WHEN SUM_CMD > 0 THEN USER_ID END)  AS CMD_USERS
+        FROM (
+            SELECT USER_ID,
+                   SUM(SKILL_COUNT) AS SUM_SK, SUM(MCP_COUNT) AS SUM_MCP,
+                   SUM(SUBAGENT_COUNT) AS SUM_SA, SUM(COMMAND_COUNT) AS SUM_CMD
+            FROM {_S}.USER_SUMMARY
+            WHERE TEAM_ID = '{team_id}'
+              AND SUMMARY_DATE >= DATEADD('day', -{days * 2}, CURRENT_DATE())
+              AND SUMMARY_DATE <  DATEADD('day', -{days}, CURRENT_DATE())
+            GROUP BY USER_ID
+        )
+    ),
+    tot AS (
+        SELECT COUNT(DISTINCT USER_ID) AS TOTAL_USERS
+        FROM {_S}.USER_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+    )
+    SELECT
+        c.TOOL_EXECS, c.MSG_COUNT, c.SESS_COUNT,
+        cu.ACTIVE_USERS, cu.TOTAL_EVENTS,
+        cf.FEAT_TOTAL, cf.SKILL_USERS, cf.MCP_USERS, cf.SA_USERS, cf.CMD_USERS,
+        ct.TOOL_SUCCESS, ct.TOOL_TOTAL,
+        p.TOOL_EXECS      AS PREV_TOOL_EXECS,
+        pu.ACTIVE_USERS   AS PREV_ACTIVE_USERS,
+        pu.TOTAL_EVENTS   AS PREV_TOTAL_EVENTS,
+        pt.TOOL_SUCCESS   AS PREV_TOOL_SUCCESS,
+        pt.TOOL_TOTAL     AS PREV_TOOL_TOTAL,
+        pf.FEAT_TOTAL     AS PREV_FEAT_TOTAL,
+        pf.SKILL_USERS    AS PREV_SKILL_USERS,
+        pf.MCP_USERS      AS PREV_MCP_USERS,
+        pf.SA_USERS       AS PREV_SA_USERS,
+        pf.CMD_USERS      AS PREV_CMD_USERS,
+        tt.TOTAL_USERS
+    FROM cur c, cur_users cu, cur_feat cf, cur_tools ct,
+         prev p, prev_users pu, prev_tools pt, prev_feat pf, tot tt
+    """
+    try:
+        return get_session().sql(query).to_pandas()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_productivity_trend(team_id: str, days: int) -> pd.DataFrame:
+    """日次生産性トレンド（DAILY_SUMMARY + USER_SUMMARY）"""
+    cap = min(days, 90)
+    query = f"""
+    WITH daily_tools AS (
+        SELECT
+            SUMMARY_DATE,
+            SUM(TOOL_EXECUTION_COUNT) AS TOOL_EXECS,
+            SUM(MESSAGE_COUNT)        AS MESSAGES,
+            SUM(SESSION_COUNT)        AS SESSIONS
+        FROM {_S}.DAILY_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
+        GROUP BY SUMMARY_DATE
+    ),
+    daily_users AS (
+        SELECT
+            SUMMARY_DATE,
+            COUNT(DISTINCT USER_ID) AS ACTIVE_USERS
+        FROM {_S}.USER_SUMMARY
+        WHERE TEAM_ID = '{team_id}'
+          AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
+        GROUP BY SUMMARY_DATE
+    )
+    SELECT
+        t.SUMMARY_DATE AS EVENT_DATE,
+        t.TOOL_EXECS,
+        t.MESSAGES,
+        t.SESSIONS,
+        u.ACTIVE_USERS,
+        ROUND(t.TOOL_EXECS / NULLIF(u.ACTIVE_USERS, 0), 1) AS TOOLS_PER_USER,
+        ROUND(t.MESSAGES  / NULLIF(u.ACTIVE_USERS, 0), 1)  AS MSGS_PER_USER
+    FROM daily_tools t
+    LEFT JOIN daily_users u ON t.SUMMARY_DATE = u.SUMMARY_DATE
+    ORDER BY 1
+    """
+    try:
+        return get_session().sql(query).to_pandas()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_user_efficiency(team_id: str, days: int) -> pd.DataFrame:
+    """ユーザー効率マップ（USER_SUMMARY）"""
+    query = f"""
+    SELECT
+        USER_ID,
+        SPLIT_PART(USER_ID, '@', 1)  AS DISPLAY_NAME,
+        SUM(MESSAGE_COUNT)            AS MESSAGES,
+        SUM(SESSION_COUNT)            AS SESSIONS,
+        SUM(TOTAL_EVENTS)             AS TOTAL_EVENTS,
+        SUM(SKILL_COUNT)
+          + SUM(MCP_COUNT)
+          + SUM(SUBAGENT_COUNT)       AS ADVANCED_FEATURES
+    FROM {_S}.USER_SUMMARY
+    WHERE TEAM_ID = '{team_id}'
+      AND SUMMARY_DATE >= DATEADD('day', -{days}, CURRENT_DATE())
+    GROUP BY USER_ID
+    HAVING SUM(MESSAGE_COUNT) > 0
+    ORDER BY TOTAL_EVENTS DESC
+    """
+    try:
+        return get_session().sql(query).to_pandas()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_weekly_feature_mix(team_id: str, days: int) -> pd.DataFrame:
+    """週次機能活用ミックス（DAILY_SUMMARY）"""
+    cap = min(days, 90)
+    query = f"""
+    SELECT
+        DATE_TRUNC('week', SUMMARY_DATE)::DATE AS WEEK_START,
+        SUM(MESSAGE_COUNT)                      AS MESSAGES,
+        SUM(SKILL_COUNT)                        AS SKILLS,
+        SUM(MCP_COUNT)                          AS MCP,
+        GREATEST(
+            SUM(TOOL_EXECUTION_COUNT)
+              - SUM(SKILL_COUNT)
+              - SUM(MCP_COUNT), 0)              AS BASIC_TOOLS
+    FROM {_S}.DAILY_SUMMARY
+    WHERE TEAM_ID = '{team_id}'
+      AND SUMMARY_DATE >= DATEADD('day', -{cap}, CURRENT_DATE())
+    GROUP BY 1
+    ORDER BY 1
+    """
+    try:
+        return get_session().sql(query).to_pandas()
+    except Exception:
+        return pd.DataFrame()
