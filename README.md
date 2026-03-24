@@ -43,7 +43,9 @@ claude-usage-tracker/
 │       └── scripts/          # イベント送信スクリプト
 ├── snowflake-upload/         # Snowflake アップロードツール
 │   ├── upload_to_snowflake.py  # PUT + COPY + MERGE パイプライン
-│   └── setup_snowflake.ps1     # セットアップ・タスク登録
+│   ├── setup_snowflake.ps1     # セットアップ・タスク登録
+│   ├── install_hooks.ps1       # フック設定スクリプト
+│   └── deploy_sis.py           # SiS アプリデプロイ
 ├── snowflake/                # Snowflake + Streamlit
 │   ├── app/                  # Streamlit in Snowflake アプリ
 │   │   ├── streamlit_app.py

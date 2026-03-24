@@ -26,37 +26,43 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 
 ### Step 2: Hooks の設定（プラグインインストール相当）
 
-`~/.claude/settings.json` に hooks を直接書き込みます。
-`$REPO_PATH` はこのリポジトリのクローン先パスに置き換えてください。
+`install_hooks.ps1` を実行して `~/.claude/settings.json` にフック設定を自動で書き込みます。
+既存の `settings.json` がある場合は `hooks` キーのみ追加・上書きし、他の設定は保持されます。
 
-既存の `settings.json` がある場合はマージしてください（`hooks` キーのみ追加/上書き）。
+```powershell
+cd <リポジトリパス>/snowflake-upload
+Unblock-File -Path .\install_hooks.ps1
+.\install_hooks.ps1
+```
 
-書き込む hooks の内容:
+#### スクリプトが失敗した場合の手動設定
+
+`install_hooks.ps1` の実行に失敗した場合や、Claude Code が不安定になる場合は、
+`~/.claude/settings.json` を直接編集してフック設定を追加してください。
+
+1. `~/.claude/settings.json` を開く（なければ新規作成）
+2. `hooks` キーに以下の設定を追加する（`<リポジトリパス>` は実際のパスに置換）
 
 ```json
 {
   "hooks": {
-    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionStart"}]}],
-    "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionEnd"}]}],
-    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type UserPromptSubmit"}]}],
-    "PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type PreToolUse"}]}],
-    "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type PostToolUse"}]}],
-    "PostToolUseFailure": [{"matcher": "*", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type PostToolUseFailure"}]}],
-    "SubagentStart": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type SubagentStart"}]}],
-    "SubagentStop": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type SubagentStop"}]}],
-    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type Notification"}]}],
-    "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type PreCompact"}]}],
-    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type Stop"}]}],
-    "PermissionRequest": [{"matcher": "*", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type PermissionRequest"}]}],
-    "TeammateIdle": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type TeammateIdle"}]}],
-    "TaskCompleted": [{"matcher": "", "hooks": [{"type": "command", "command": "uv run \"$REPO_PATH/plugin/usage-tracker/scripts/send_event.py\" --event-type TaskCompleted"}]}]
+    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type PreToolUse" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type PostToolUse" }] }],
+    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type Stop" }] }],
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type UserPromptSubmit" }] }],
+    "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionStart" }] }],
+    "SessionEnd": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"<リポジトリパス>/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionEnd" }] }]
   }
 }
 ```
 
+> **Note**: 上記は主要な6イベントの例です。全14イベント（PostToolUseFailure, SubagentStart, SubagentStop, Notification, PreCompact, PermissionRequest, TeammateIdle, TaskCompleted）も同様に追加できます。
+> Claude Code を再起動するとフックが有効になります。
+
 ### Step 3: Snowflake 環境変数の設定
 
 ユーザーに Snowflake の LOGIN_NAME を聞いてください。
+`IT.` 付きのメールアドレスです（例: `IT.YAMADA.TARO@IFTC.CO.JP`）。
 
 ```powershell
 # アカウント識別子（全員共通）
@@ -110,6 +116,8 @@ cd <リポジトリパス>/snowflake-upload
 Unblock-File -Path .\setup_snowflake.ps1
 .\setup_snowflake.ps1 -Action register-task
 ```
+
+> **Note**: 旧 S3 タスク（`Claude Usage Log Upload`）が登録されている場合は、スクリプトが検出して削除するか確認します。
 
 ### Step 8: 完了確認
 

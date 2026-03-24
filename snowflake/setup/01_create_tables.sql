@@ -5,7 +5,7 @@
 -- レイヤー構成:
 --   LAYER1 (Raw)   : ステージ + RAW_EVENTS（JSONL そのまま保持）
 --   LAYER2 (Clean) : EVENTS（カラム展開・重複排除・蓄積）
---   LAYER3 (Mart)  : サマリーテーブル + ダッシュボード用ビュー
+--   LAYER3 (Mart)  : サマリーテーブル + SiS ステージ
 -- ============================================================================
 
 -- ============================================================================
@@ -156,63 +156,7 @@ CREATE TABLE IF NOT EXISTS TOOL_SUMMARY (
 );
 
 -- ============================================================================
--- 4. LAYER3: ビュー（ダッシュボード用 — ソースは LAYER2.EVENTS）
--- ============================================================================
-
--- 日次 KPI ビュー
-CREATE OR REPLACE VIEW V_KPI_METRICS AS
-SELECT
-    TEAM_ID,
-    DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE          AS EVENT_DATE,
-    COUNT(*)                                           AS TOTAL_EVENTS,
-    COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END) AS MESSAGE_COUNT,
-    COUNT(CASE WHEN EVENT_TYPE = 'SessionStart'     THEN 1 END) AS SESSION_COUNT,
-    COUNT(CASE WHEN TOOL_NAME IS NOT NULL           THEN 1 END) AS TOOL_COUNT,
-    COUNT(CASE WHEN IS_MCP      = TRUE THEN 1 END)   AS MCP_COUNT,
-    COUNT(CASE WHEN IS_SUBAGENT = TRUE THEN 1 END)   AS SUBAGENT_COUNT,
-    COUNT(CASE WHEN IS_COMMAND  = TRUE THEN 1 END)   AS COMMAND_COUNT,
-    COUNT(CASE WHEN IS_SKILL    = TRUE THEN 1 END)   AS SKILL_COUNT,
-    COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END) AS LIMIT_HIT_COUNT,
-    COUNT(DISTINCT USER_ID)                            AS ACTIVE_USERS
-FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
-GROUP BY TEAM_ID, DATE_TRUNC('DAY', EVENT_TIMESTAMP);
-
--- ユーザーランキングビュー
-CREATE OR REPLACE VIEW V_USER_RANKING AS
-SELECT
-    USER_ID,
-    TEAM_ID,
-    SPLIT_PART(USER_ID, '@', 1)                        AS DISPLAY_NAME,
-    COUNT(*)                                            AS TOTAL_COUNT,
-    COUNT(CASE WHEN EVENT_TYPE = 'UserPromptSubmit' THEN 1 END) AS MESSAGE_COUNT,
-    COUNT(CASE WHEN IS_SKILL    = TRUE THEN 1 END)     AS SKILL_COUNT,
-    COUNT(CASE WHEN IS_SUBAGENT = TRUE THEN 1 END)     AS SUBAGENT_COUNT,
-    COUNT(CASE WHEN IS_MCP      = TRUE THEN 1 END)     AS MCP_COUNT,
-    COUNT(CASE WHEN IS_COMMAND  = TRUE THEN 1 END)     AS COMMAND_COUNT,
-    COUNT(CASE WHEN IS_USAGE_LIMIT = TRUE THEN 1 END)  AS LIMIT_HIT_COUNT,
-    MAX(EVENT_TIMESTAMP)                                AS LAST_ACTIVE_AT
-FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
-GROUP BY USER_ID, TEAM_ID;
-
--- ツール利用ビュー
-CREATE OR REPLACE VIEW V_TOOL_RANKING AS
-SELECT
-    TEAM_ID,
-    TOOL_NAME,
-    DATE_TRUNC('DAY', EVENT_TIMESTAMP)::DATE AS EVENT_DATE,
-    COUNT(*)                                 AS EXECUTION_COUNT,
-    COUNT(CASE WHEN TOOL_SUCCESS = TRUE  THEN 1 END) AS SUCCESS_COUNT,
-    COUNT(CASE WHEN TOOL_SUCCESS = FALSE THEN 1 END) AS FAILURE_COUNT,
-    ROUND(
-        COUNT(CASE WHEN TOOL_SUCCESS = TRUE THEN 1 END)
-        / NULLIF(COUNT(*), 0) * 100, 1
-    ) AS SUCCESS_RATE
-FROM CLAUDE_USAGE_DB.LAYER2.EVENTS
-WHERE TOOL_NAME IS NOT NULL
-GROUP BY TEAM_ID, TOOL_NAME, DATE_TRUNC('DAY', EVENT_TIMESTAMP);
-
--- ============================================================================
--- 5. LAYER3: SiS ステージ
+-- 4. LAYER3: SiS ステージ
 -- ============================================================================
 
 -- SiS アプリファイル用

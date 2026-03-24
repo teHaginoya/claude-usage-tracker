@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Claude Code Usage Tracker - Snowflake Setup and Upload
 .DESCRIPTION

@@ -23,6 +23,8 @@ Step 6: 自動アップロードの設定
 - Windows PC
 - Claude Code がインストール済み
 - 自分の Snowflake ユーザー名（LOGIN_NAME）を把握していること
+  - `IT.` 付きのメールアドレスです（例: `IT.YAMADA.TARO@IFTC.CO.JP`）
+  - Snowsight にログインする際に使うメールアドレスと同じです
 
 ---
 
@@ -97,61 +99,86 @@ dir $env:USERPROFILE\claude-usage-tracker
 
 ---
 
-## Step 3: Claude Code プラグインのインストール
+## Step 3: イベント収集フックのインストール
 
-### 3-1. PowerShell実行ポリシーを変更
+2つの方法があります。**方法A（推奨）** がうまくいかない場合は **方法B** を使ってください。
+
+### 方法A: スクリプトで自動設定（推奨）
+
+PowerShellで以下を実行するだけで完了です:
 
 ```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
+Unblock-File -Path .\install_hooks.ps1
+.\install_hooks.ps1
 ```
 
-「実行ポリシーを変更しますか?」と聞かれたら `Y` を入力してEnter。
+`[OK] settings.json にフック設定を書き込みました` と表示されれば成功です。
 
-### 3-2. ホームフォルダでClaude Codeを起動
+### 方法B: settings.json を手動で編集
+
+方法Aのスクリプトがうまく動かない場合は、設定ファイルを直接編集します。
+
+#### B-1. settings.json を開く
 
 ```powershell
-cd $env:USERPROFILE
+notepad $env:USERPROFILE\.claude\settings.json
+```
+
+ファイルが存在しない場合は、先にフォルダとファイルを作成します:
+
+```powershell
+New-Item -ItemType Directory -Path $env:USERPROFILE\.claude -Force
+New-Item -ItemType File -Path $env:USERPROFILE\.claude\settings.json -Force
+```
+
+#### B-2. フック設定を貼り付ける
+
+以下の内容を `settings.json` に貼り付けてください。
+`<ユーザー名>` の部分は自分の Windows ユーザー名に置き換えてください（例: `yamada`）。
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type PreToolUse" }] }],
+    "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type PostToolUse" }] }],
+    "PostToolUseFailure": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type PostToolUseFailure" }] }],
+    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type Stop" }] }],
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type UserPromptSubmit" }] }],
+    "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionStart" }] }],
+    "SessionEnd": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type SessionEnd" }] }],
+    "SubagentStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type SubagentStart" }] }],
+    "SubagentStop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type SubagentStop" }] }],
+    "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type Notification" }] }],
+    "PreCompact": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type PreCompact" }] }],
+    "PermissionRequest": [{ "matcher": "*", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type PermissionRequest" }] }],
+    "TeammateIdle": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type TeammateIdle" }] }],
+    "TaskCompleted": [{ "matcher": "", "hooks": [{ "type": "command", "command": "uv run \"C:/Users/<ユーザー名>/claude-usage-tracker/plugin/usage-tracker/scripts/send_event.py\" --event-type TaskCompleted" }] }]
+  }
+}
+```
+
+> **重要**: 既に `settings.json` に他の設定がある場合は、`hooks` キーだけを追加し、既存の設定は消さないでください。
+
+#### B-3. 保存して閉じる
+
+ファイルを保存してメモ帳を閉じます。
+
+### 設定後の確認（共通）
+
+Claude Code を再起動してください:
+
+```powershell
 claude
 ```
 
-### 3-3. マーケットプレイスを追加
-
-Claude Codeの中で以下を入力:
-
-```text
-/plugin marketplace add ./claude-usage-tracker/plugin
-```
-
-### 3-4. プラグインをインストール
-
-```text
-/plugin install usage-tracker@usage-tracker-marketplace
-```
-
-メニューが表示されたら:
-
-- 「Install for you (user scope)」を選択
-- Enterを押す
-
-### 3-5. Claude Codeを再起動
-
-```text
-exit
-```
-
-でClaude Codeを終了し、再度起動:
+Claude Code を少し使った後、ログファイルが生成されているか確認:
 
 ```powershell
-claude
+dir $env:USERPROFILE\.claude\usage-tracker-logs\
 ```
 
-### 3-6. 動作確認
-
-```text
-/usage-stats
-```
-
-「ログディレクトリが見つかりません」または統計が表示されればOKです。
+`events-2026-XX-XX.jsonl` のようなファイルがあればOKです。
 
 ---
 
@@ -179,8 +206,11 @@ Unblock-File -Path $env:USERPROFILE\claude-usage-tracker\snowflake-upload\setup_
 
 ```text
 Snowflake アカウント識別子: MYLMWWX-DPF002（全員共通、そのままEnterでOK）
-Snowflake ユーザー名: （自分の LOGIN_NAME、例: IT.YAMADA.TARO@IFTC.CO.JP）
+Snowflake ユーザー名: （自分の LOGIN_NAME を入力）
 ```
+
+> **Tip**: LOGIN_NAME は `IT.` 付きのメールアドレスです（例: `IT.YAMADA.TARO@IFTC.CO.JP`）。
+> Snowsight にログインする際に使うメールアドレスと同じです。
 
 セットアップ中に RSA キーペアが自動生成され、公開鍵が表示されます。
 
@@ -254,7 +284,7 @@ cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
 .\setup_snowflake.ps1 -Action register-task
 ```
 
-旧S3アップロードタスクがある場合は削除するか聞かれます。
+> **Note**: 旧 S3 タスク（`Claude Usage Log Upload`）が登録されている場合は、スクリプトが検出して削除するか確認します。
 
 ### 6-2. 登録されたか確認
 
@@ -338,18 +368,19 @@ cd $env:USERPROFILE\claude-usage-tracker\snowflake-upload
 uv run upload_to_snowflake.py --action generate-key
 ```
 
-生成後、新しい公開鍵を管理者に渡して再登録してもらってください。
+生成後、新しい公開鍵を Snowsight で再登録してください（Step 4-4 参照）。
 
 ### 「ログファイルが見つからない」
 
 → Claude Codeを少し使ってから再確認してください。
-プラグインが正しくインストールされているか確認:
+フック設定が正しく入っているか確認:
 
-```text
-/plugin
+```powershell
+Get-Content $env:USERPROFILE\.claude\settings.json
 ```
 
-→ 「Installed」タブに「usage-tracker」があればOK
+→ `hooks` の中に `PreToolUse` や `Stop` などのイベントが定義されていればOK。
+設定がない場合は Step 3 をやり直してください。
 
 ### PCを再起動したらエラーが出る
 
